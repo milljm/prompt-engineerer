@@ -1,7 +1,9 @@
+import { useEffect, useRef } from "react";
 import { Eraser, Square, Swords } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { isPinnedToBottom, pinToBottom } from "@/lib/scroll";
 import { useEngineStore } from "@/lib/store";
 import type { IterationRecord } from "@/lib/types";
 import { cn, formatMs } from "@/lib/utils";
@@ -91,16 +93,7 @@ export function RunPanel({
 
       <ScrollArea className="min-h-0 flex-1">
         <div className="space-y-3 px-4 py-4 md:px-5">
-          {running && liveChild ? (
-            <article className="rounded-xl bg-secondary p-3 shadow-[var(--shadow-border)]">
-              <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                Child, live
-              </p>
-              <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap font-mono text-xs leading-relaxed text-foreground">
-                {liveChild}
-              </pre>
-            </article>
-          ) : null}
+          {running && liveChild ? <LiveChild text={liveChild} /> : null}
 
           {!iterations.length && !running ? (
             <EmptyHint />
@@ -110,6 +103,41 @@ export function RunPanel({
         </div>
       </ScrollArea>
     </div>
+  );
+}
+
+function LiveChild({ text }: { text: string }) {
+  const scroller = useRef<HTMLPreElement>(null);
+  const pinned = useRef(true);
+
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el || !pinned.current) return;
+    pinToBottom(el);
+  }, [text]);
+
+  return (
+    <article className="flex h-72 min-h-0 flex-col overflow-hidden rounded-xl bg-secondary p-3 shadow-[var(--shadow-border)]">
+      <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+        Child, live
+      </p>
+      <pre
+        ref={scroller}
+        onScroll={() => {
+          const el = scroller.current;
+          if (el) pinned.current = isPinnedToBottom(el);
+        }}
+        onWheel={(event) => {
+          const el = event.currentTarget;
+          const atTop = el.scrollTop <= 0 && event.deltaY < 0;
+          const atBottom = isPinnedToBottom(el, 1) && event.deltaY > 0;
+          if (!atTop && !atBottom) event.stopPropagation();
+        }}
+        className="mt-2 min-h-0 flex-1 overflow-y-auto overscroll-contain whitespace-pre-wrap font-mono text-xs leading-relaxed text-foreground"
+      >
+        {text}
+      </pre>
+    </article>
   );
 }
 
