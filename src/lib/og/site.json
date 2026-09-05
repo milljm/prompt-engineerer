@@ -1,0 +1,5 @@
+{
+  "title": "Prompt Engineerer",
+  "card": "custom",
+  "description": "A prompt-engineering forge \u2014 nest a parent model around a child LLM."
+}
