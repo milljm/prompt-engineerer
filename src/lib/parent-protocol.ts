@@ -1,5 +1,11 @@
+/**
+ * Parent model protocol: the system prompt, JSON shape, and parsers that turn
+ * a (sometimes messy) Parent reply into a typed revision + test plan.
+ */
+
 import type { PromptVersion, ScenarioSpec } from "./types";
 
+/** System prompt given to the Parent LLM every call. */
 export const PARENT_SYSTEM = `You are Parent, a prompt engineer. You write and iterate on a SYSTEM PROMPT for a Child LLM.
 
 The human describes the behavior they want from Child. You produce the complete system prompt Child will receive, then design test scenarios, then score Child's transcripts 1–10 and either keep, revise, or revert.
@@ -39,6 +45,11 @@ export type ParentReply = {
   rationale: string;
 };
 
+/**
+ * Coerce an unknown action token onto the allowed set.
+ *
+ * @param value - Raw `action` field from Parent JSON.
+ */
 function asAction(value: unknown): ParentAction {
   if (value === "revise" || value === "revert" || value === "pass" || value === "draft") {
     return value;
@@ -46,6 +57,14 @@ function asAction(value: unknown): ParentAction {
   return "revise";
 }
 
+/**
+ * Normalize Parent-provided scenarios and pad each to `minTurns`.
+ *
+ * Accepts `turns` as strings or `{user}` objects, and a legacy single `user`.
+ *
+ * @param raw - `scenarios` array from Parent JSON.
+ * @param minTurns - Minimum user turns per scenario (from settings).
+ */
 function asScenarios(raw: unknown, minTurns: number): ScenarioSpec[] {
   if (!Array.isArray(raw)) return [];
   const out: ScenarioSpec[] = [];
@@ -77,6 +96,15 @@ function asScenarios(raw: unknown, minTurns: number): ScenarioSpec[] {
   return out.slice(0, 4);
 }
 
+/**
+ * Parse Parent's JSON object into a typed reply.
+ *
+ * Tolerates camelCase aliases (`systemPrompt`, `revertTo`) and clamps score
+ * to 1–10. Unknown `action` values become `"revise"`.
+ *
+ * @param raw - Value from {@link extractJsonObject}.
+ * @param minTurns - Turns required on each scenario.
+ */
 export function parseParentReply(raw: unknown, minTurns: number): ParentReply {
   if (!raw || typeof raw !== "object") {
     throw new Error("Parent reply was not an object");
@@ -117,6 +145,12 @@ export function parseParentReply(raw: unknown, minTurns: number): ParentReply {
   };
 }
 
+/**
+ * Compact revision timeline Parent sees on later turns.
+ *
+ * @param versions - Prompt versions accumulated this run.
+ * @returns A newline-delimited brief, or `(none yet)`.
+ */
 export function historyBrief(versions: PromptVersion[]): string {
   if (!versions.length) return "(none yet)";
   return versions
@@ -129,6 +163,12 @@ export function historyBrief(versions: PromptVersion[]): string {
     .join("\n");
 }
 
+/**
+ * Fallback scenarios used when Parent omits them.
+ *
+ * @param goal - User's desired behavior, injected into the first turn.
+ * @param turns - Number of user turns per scenario.
+ */
 export function fallbackScenarios(goal: string, turns: number): ScenarioSpec[] {
   const first = goal.trim()
     ? `Act as a user of this assistant. Start a realistic first request that tests: ${goal.trim().slice(0, 280)}`

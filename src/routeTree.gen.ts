@@ -10,53 +10,53 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as ApiXaiChatRouteImport } from './routes/api/xai/chat'
-import { Route as ApiXaiModelsRouteImport } from './routes/api/xai/models'
+import { Route as ApiOpenaiChatRouteImport } from './routes/api/openai/chat'
+import { Route as ApiOpenaiModelsRouteImport } from './routes/api/openai/models'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiXaiChatRoute = ApiXaiChatRouteImport.update({
-  id: '/api/xai/chat',
-  path: '/api/xai/chat',
+const ApiOpenaiChatRoute = ApiOpenaiChatRouteImport.update({
+  id: '/api/openai/chat',
+  path: '/api/openai/chat',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiXaiModelsRoute = ApiXaiModelsRouteImport.update({
-  id: '/api/xai/models',
-  path: '/api/xai/models',
+const ApiOpenaiModelsRoute = ApiOpenaiModelsRouteImport.update({
+  id: '/api/openai/models',
+  path: '/api/openai/models',
   getParentRoute: () => rootRouteImport,
 } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/api/xai/chat': typeof ApiXaiChatRoute
-  '/api/xai/models': typeof ApiXaiModelsRoute
+  '/api/openai/chat': typeof ApiOpenaiChatRoute
+  '/api/openai/models': typeof ApiOpenaiModelsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/api/xai/chat': typeof ApiXaiChatRoute
-  '/api/xai/models': typeof ApiXaiModelsRoute
+  '/api/openai/chat': typeof ApiOpenaiChatRoute
+  '/api/openai/models': typeof ApiOpenaiModelsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/api/xai/chat': typeof ApiXaiChatRoute
-  '/api/xai/models': typeof ApiXaiModelsRoute
+  '/api/openai/chat': typeof ApiOpenaiChatRoute
+  '/api/openai/models': typeof ApiOpenaiModelsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/api/xai/chat' | '/api/xai/models'
+  fullPaths: '/' | '/api/openai/chat' | '/api/openai/models'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/xai/chat' | '/api/xai/models'
-  id: '__root__' | '/' | '/api/xai/chat' | '/api/xai/models'
+  to: '/' | '/api/openai/chat' | '/api/openai/models'
+  id: '__root__' | '/' | '/api/openai/chat' | '/api/openai/models'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  ApiXaiChatRoute: typeof ApiXaiChatRoute
-  ApiXaiModelsRoute: typeof ApiXaiModelsRoute
+  ApiOpenaiChatRoute: typeof ApiOpenaiChatRoute
+  ApiOpenaiModelsRoute: typeof ApiOpenaiModelsRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -68,18 +68,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/xai/chat': {
-      id: '/api/xai/chat'
-      path: '/api/xai/chat'
-      fullPath: '/api/xai/chat'
-      preLoaderRoute: typeof ApiXaiChatRouteImport
+    '/api/openai/chat': {
+      id: '/api/openai/chat'
+      path: '/api/openai/chat'
+      fullPath: '/api/openai/chat'
+      preLoaderRoute: typeof ApiOpenaiChatRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/xai/models': {
-      id: '/api/xai/models'
-      path: '/api/xai/models'
-      fullPath: '/api/xai/models'
-      preLoaderRoute: typeof ApiXaiModelsRouteImport
+    '/api/openai/models': {
+      id: '/api/openai/models'
+      path: '/api/openai/models'
+      fullPath: '/api/openai/models'
+      preLoaderRoute: typeof ApiOpenaiModelsRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -87,8 +87,8 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  ApiXaiChatRoute: ApiXaiChatRoute,
-  ApiXaiModelsRoute: ApiXaiModelsRoute,
+  ApiOpenaiChatRoute: ApiOpenaiChatRoute,
+  ApiOpenaiModelsRoute: ApiOpenaiModelsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

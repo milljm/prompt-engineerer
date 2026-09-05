@@ -1,4 +1,5 @@
-import { RefreshCw } from "lucide-react";
+import { useState } from "react";
+import { Eye, EyeOff, RefreshCw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,24 +7,18 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Slider } from "@/components/ui/slider";
 import { probeConnection } from "@/lib/connect";
 import { useEngineStore } from "@/lib/store";
-import type { BackendKind } from "@/lib/types";
 import { cn, shortModel } from "@/lib/utils";
 import { ThemeToggle } from "./theme-toggle";
-
-const BACKENDS: { id: BackendKind; label: string }[] = [
-  { id: "auto", label: "Auto" },
-  { id: "edge", label: "Edge" },
-  { id: "xai", label: "xAI" },
-];
 
 export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const settings = useEngineStore((s) => s.settings);
   const connection = useEngineStore((s) => s.connection);
   const setSettings = useEngineStore((s) => s.setSettings);
   const running = useEngineStore((s) => s.status === "running" || s.status === "stopping");
+  const [showKey, setShowKey] = useState(false);
 
-  const edgeOk = connection.edge.ok;
-  const xaiOk = connection.xai.ok;
+  const connected = connection.ok;
+  const hasUrl = settings.apiUrl.trim().length > 0;
 
   return (
     <div className="flex h-full flex-col bg-card paper">
@@ -40,17 +35,21 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
 
       <div className="px-4 pb-3">
         <div className="flex items-center gap-2 rounded-lg bg-secondary px-3 py-2 shadow-[var(--shadow-border)]">
-          <span className={cn(edgeOk || xaiOk ? "live-dot" : "dead-dot")} />
+          <span className={cn(connected ? "live-dot" : "dead-dot")} />
           <div className="min-w-0 flex-1">
             <p className="truncate text-xs font-medium">
-              {edgeOk ? "Edge reachable" : xaiOk ? "xAI ready" : "No backend"}
+              {connection.probing
+                ? "Checking API…"
+                : connected
+                  ? "API connected"
+                  : hasUrl
+                    ? "API unreachable"
+                    : "No API yet"}
             </p>
             <p className="truncate text-[11px] text-muted-foreground">
-              {edgeOk
-                ? `${connection.models.filter((m) => m.backend === "edge").length || connection.models.length} loaded`
-                : xaiOk
-                  ? "Grok via xAI"
-                  : connection.edge.error || connection.xai.error || "Connect Edge or use xAI"}
+              {connected
+                ? `${connection.models.length} model${connection.models.length === 1 ? "" : "s"} loaded`
+                : connection.error || "Enter an OpenAI-compatible /v1 address"}
             </p>
           </div>
           <Button
@@ -58,7 +57,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
             variant="ghost"
             size="icon-sm"
             aria-label="Refresh models"
-            disabled={connection.probing}
+            disabled={connection.probing || !hasUrl}
             onClick={() => void probeConnection()}
           >
             <RefreshCw className={cn("size-3.5", connection.probing && "animate-spin")} />
@@ -69,38 +68,56 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
       <ScrollArea className="min-h-0 flex-1">
         <div className="space-y-5 px-4 pb-6">
           <section className="space-y-2">
-            <Label>Backend</Label>
-            <div className="grid grid-cols-3 gap-1 rounded-md bg-secondary p-1 shadow-[var(--shadow-border)]">
-              {BACKENDS.map((b) => (
-                <button
-                  key={b.id}
-                  type="button"
-                  disabled={running}
-                  onClick={() => {
-                    setSettings({ backend: b.id });
-                    void probeConnection();
-                    onNavigate?.();
-                  }}
-                  className={cn(
-                    "h-8 rounded-sm text-xs font-medium transition-[background-color,color] duration-[var(--motion-quick)]",
-                    settings.backend === b.id
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {b.label}
-                </button>
-              ))}
-            </div>
+            <Label>OpenAI API</Label>
             <Input
-              value={settings.edgeUrl}
+              value={settings.apiUrl}
               disabled={running}
-              onChange={(e) => setSettings({ edgeUrl: e.target.value })}
-              onBlur={() => void probeConnection()}
-              placeholder="http://127.0.0.1:8080"
-              aria-label="Edge URL"
+              onChange={(e) => setSettings({ apiUrl: e.target.value })}
+              onBlur={() => {
+                if (settings.apiUrl.trim()) void probeConnection();
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && settings.apiUrl.trim()) {
+                  e.currentTarget.blur();
+                  void probeConnection();
+                }
+              }}
+              placeholder="https://api.openai.com/v1"
+              aria-label="OpenAI-compatible API address"
+              autoComplete="off"
+              spellCheck={false}
               className="h-9 font-mono text-xs"
             />
+            <div className="relative">
+              <Input
+                type={showKey ? "text" : "password"}
+                value={settings.apiKey}
+                disabled={running}
+                onChange={(e) => setSettings({ apiKey: e.target.value })}
+                onBlur={() => {
+                  if (settings.apiUrl.trim()) void probeConnection();
+                }}
+                placeholder="API key (if required)"
+                aria-label="API key"
+                autoComplete="off"
+                spellCheck={false}
+                className="h-9 pr-9 font-mono text-xs"
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label={showKey ? "Hide API key" : "Show API key"}
+                className="absolute right-1 top-1/2 -translate-y-1/2"
+                onClick={() => setShowKey((v) => !v)}
+              >
+                {showKey ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+              </Button>
+            </div>
+            <p className="text-[11px] leading-relaxed text-muted-foreground">
+              Any OpenAI-compatible <span className="font-mono">/v1</span> endpoint. Local servers
+              usually skip the key.
+            </p>
           </section>
 
           <section className="space-y-2">
@@ -109,14 +126,20 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
               value={settings.parentModel}
               role="parent"
               disabled={running}
-              onChange={(id) => setSettings({ parentModel: id })}
+              onChange={(id) => {
+                setSettings({ parentModel: id });
+                onNavigate?.();
+              }}
             />
             <Label>Child</Label>
             <ModelSelect
               value={settings.childModel}
               role="child"
               disabled={running}
-              onChange={(id) => setSettings({ childModel: id })}
+              onChange={(id) => {
+                setSettings({ childModel: id });
+                onNavigate?.();
+              }}
             />
           </section>
 
@@ -127,7 +150,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
                 <p className="text-xs text-muted-foreground">Scanning…</p>
               ) : !connection.models.length ? (
                 <p className="text-xs text-muted-foreground">
-                  No models yet. Start Edge and load checkpoints, or switch to xAI.
+                  No models yet. Enter a compatible API address and refresh.
                 </p>
               ) : (
                 connection.models.map((m) => {
@@ -135,11 +158,13 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
                   const isChild = m.id === settings.childModel;
                   return (
                     <div
-                      key={`${m.backend}:${m.id}`}
+                      key={m.id}
                       className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-accent"
                     >
-                      <span className={cn("size-1.5 rounded-full", m.backend === "edge" ? "bg-ok" : "bg-hot")} />
-                      <span className="min-w-0 flex-1 truncate font-mono text-[11px]">{shortModel(m.name)}</span>
+                      <span className="size-1.5 rounded-full bg-ok" />
+                      <span className="min-w-0 flex-1 truncate font-mono text-[11px]">
+                        {shortModel(m.name)}
+                      </span>
                       {isParent ? <Badge variant="parent">parent</Badge> : null}
                       {isChild ? <Badge variant="child">child</Badge> : null}
                     </div>
@@ -217,7 +242,7 @@ function ModelSelect({
     >
       {!models.length ? <option value="">No models</option> : null}
       {models.map((m) => (
-        <option key={`${role}-${m.backend}-${m.id}`} value={m.id}>
+        <option key={`${role}-${m.id}`} value={m.id}>
           {shortModel(m.name)}
         </option>
       ))}

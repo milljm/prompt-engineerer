@@ -1,4 +1,13 @@
-/** Pull a JSON object out of a model reply that may include fences or chatter. */
+/**
+ * Pull a JSON object out of a model reply that may include fences or chatter.
+ *
+ * Parent is instructed to return raw JSON, but models often wrap it in
+ * markdown fences or add a sentence. This recovers the object when possible.
+ *
+ * @param text - Raw model output.
+ * @returns Parsed JSON value (typically an object).
+ * @throws Error if the reply is empty or contains no parseable object.
+ */
 export function extractJsonObject(text: string): unknown {
   const trimmed = text.trim();
   if (!trimmed) throw new Error("Empty model reply");

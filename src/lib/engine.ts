@@ -1,5 +1,14 @@
+/**
+ * Iterative prompt-engineering loop.
+ *
+ * Parent drafts or revises a system prompt, Child is tested on one or more
+ * multi-turn scenarios, Parent scores the transcripts, and the cycle repeats
+ * until the target score, the iteration budget, or Stop.
+ */
+
 import { extractJsonObject } from "./json";
-import { chat, stopEdge } from "./inference";
+import { chat, stopLocal } from "./inference";
+import { isBrowserDirectUrl } from "./openai-url";
 import {
   PARENT_SYSTEM,
   fallbackScenarios,
@@ -11,7 +20,6 @@ import type {
   ChatMessage,
   IterationRecord,
   PromptVersion,
-  ResolvedBackend,
   ScenarioResult,
   ScenarioSpec,
   Settings,
@@ -33,8 +41,6 @@ export type EngineInput = {
   versions: PromptVersion[];
   currentRev: number | null;
   settings: Settings;
-  parentBackend: ResolvedBackend;
-  childBackend: ResolvedBackend;
   signal: AbortSignal;
   onEvent: (event: EngineEvent) => void;
 };
@@ -48,15 +54,15 @@ async function parentCall(
   user: string,
   onDelta: (t: string) => void,
 ): Promise<ParentReply> {
-  const { settings, parentBackend, signal } = input;
+  const { settings, signal } = input;
   const run = async (nudge?: string) => {
     const messages: ChatMessage[] = [
       { role: "system", content: PARENT_SYSTEM },
       { role: "user", content: nudge ? `${user}\n\n${nudge}` : user },
     ];
     const result = await chat({
-      backend: parentBackend,
-      edgeUrl: settings.edgeUrl,
+      apiUrl: settings.apiUrl,
+      apiKey: settings.apiKey,
       model: settings.parentModel,
       messages,
       temperature: 0.35,
@@ -81,7 +87,7 @@ async function runScenarios(
   scenarios: ScenarioSpec[],
   onDelta: (t: string) => void,
 ): Promise<ScenarioResult[]> {
-  const { settings, childBackend, signal } = input;
+  const { settings, signal } = input;
   const out: ScenarioResult[] = [];
   for (const spec of scenarios) {
     throwIfAborted(signal);
@@ -92,8 +98,8 @@ async function runScenarios(
       history.push({ role: "user", content: turn.user });
       const t0 = performance.now();
       const reply = await chat({
-        backend: childBackend,
-        edgeUrl: settings.edgeUrl,
+        apiUrl: settings.apiUrl,
+        apiKey: settings.apiKey,
         model: settings.childModel,
         messages: history,
         temperature: settings.childTemperature,
@@ -124,6 +130,14 @@ function transcriptBlock(results: ScenarioResult[]): string {
     .join("\n\n");
 }
 
+/**
+ * Run the Parent → Child → judge loop until pass, max iterations, stop, or error.
+ *
+ * Events are pushed through `onEvent` so the UI can stream deltas, versions,
+ * and scores. Aborting `signal` is the Stop button.
+ *
+ * @param input - Goal, current versions, settings, abort signal, event sink.
+ */
 export async function runEngine(input: EngineInput) {
   const { settings, signal, onEvent, goal } = input;
   let versions = [...input.versions];
@@ -331,11 +345,9 @@ export async function runEngine(input: EngineInput) {
     onEvent({ type: "done", reason: "max", message: "Iteration budget exhausted." });
   } catch (err) {
     if (err instanceof DOMException && err.name === "AbortError") {
-      if (input.childBackend === "edge") {
-        await stopEdge(settings.edgeUrl, settings.childModel);
-      }
-      if (input.parentBackend === "edge") {
-        await stopEdge(settings.edgeUrl, settings.parentModel);
+      if (isBrowserDirectUrl(settings.apiUrl)) {
+        await stopLocal(settings.apiUrl, settings.childModel);
+        await stopLocal(settings.apiUrl, settings.parentModel);
       }
       onEvent({ type: "done", reason: "stop", message: "Stopped." });
       return;

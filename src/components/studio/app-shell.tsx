@@ -3,7 +3,7 @@ import { Menu, Square, Swords, X } from "lucide-react";
 import { Toaster, toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { backendForModel, probeConnection, resolveBackend } from "@/lib/connect";
+import { probeConnection } from "@/lib/connect";
 import { runEngine, type EngineEvent } from "@/lib/engine";
 import { useEngineStore } from "@/lib/store";
 import { PromptPanel } from "./prompt-panel";
@@ -24,7 +24,7 @@ export function AppShell() {
         /* seed is fine */
       }
       setReady(true);
-      void probeConnection();
+      if (useEngineStore.getState().settings.apiUrl.trim()) void probeConnection();
     };
     void boot();
   }, []);
@@ -36,21 +36,22 @@ export function AppShell() {
       toast.error("Describe the behavior you want first.");
       return;
     }
+    if (!state.settings.apiUrl.trim()) {
+      toast.error("Enter an OpenAI-compatible API address.");
+      return;
+    }
     const conn = state.connection;
-    const resolved = resolveBackend(state.settings.backend, conn.edge.ok, conn.xai.ok);
-    if (!resolved) {
-      toast.error("No backend. Start Edge or wait for xAI.");
+    if (!conn.ok || !conn.models.length) {
+      toast.error("Connect the API first — enter the address and refresh.");
       return;
     }
     if (!state.settings.parentModel || !state.settings.childModel) {
       toast.error("Pick a parent and a child model.");
       return;
     }
-
-    const parentBackend = backendForModel(state.settings.parentModel, conn.models, resolved);
-    const childBackend = backendForModel(state.settings.childModel, conn.models, resolved);
-    if (!parentBackend || !childBackend) {
-      toast.error("Selected models are not on the active backend.");
+    const ids = new Set(conn.models.map((m) => m.id));
+    if (!ids.has(state.settings.parentModel) || !ids.has(state.settings.childModel)) {
+      toast.error("Selected models are not on this API. Refresh and pick again.");
       return;
     }
 
@@ -73,8 +74,6 @@ export function AppShell() {
       versions: useEngineStore.getState().versions,
       currentRev: useEngineStore.getState().currentRev,
       settings: useEngineStore.getState().settings,
-      parentBackend,
-      childBackend,
       signal: ac.signal,
       onEvent: (event: EngineEvent) => {
         const store = useEngineStore.getState();

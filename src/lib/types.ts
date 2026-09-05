@@ -1,17 +1,21 @@
-export type BackendKind = "auto" | "edge" | "xai";
-export type ResolvedBackend = "edge" | "xai";
+/**
+ * Shared domain types for Prompt Engineerer: models, settings, versions, and
+ * iteration records. Persisted settings live in localStorage via the store.
+ */
 
+/** A chat model listed by an OpenAI-compatible `/v1/models` endpoint. */
 export type ModelRec = {
   id: string;
   name: string;
-  backend: ResolvedBackend;
   contextLength?: number;
   ownedBy?: string;
 };
 
+/** Live connection probe against the user-entered API address. */
 export type ConnectionState = {
-  edge: { ok: boolean; url: string; error: string | null };
-  xai: { ok: boolean; error: string | null };
+  ok: boolean;
+  url: string;
+  error: string | null;
   models: ModelRec[];
   probing: boolean;
 };
@@ -69,8 +73,8 @@ export type RunStatus =
   | "failed";
 
 export type Settings = {
-  edgeUrl: string;
-  backend: BackendKind;
+  apiUrl: string;
+  apiKey: string;
   parentModel: string;
   childModel: string;
   targetScore: number;
@@ -79,11 +83,12 @@ export type Settings = {
   childTemperature: number;
 };
 
-export const DEFAULT_EDGE_URL = "http://127.0.0.1:8080";
+/** Pre-v2 persisted settings that still used the Edge/xAI backend picker. */
+export type LegacySettings = Partial<Settings> & { edgeUrl?: string; backend?: string };
 
 export const DEFAULT_SETTINGS: Settings = {
-  edgeUrl: DEFAULT_EDGE_URL,
-  backend: "auto",
+  apiUrl: "",
+  apiKey: "",
   parentModel: "",
   childModel: "",
   targetScore: 8,
@@ -94,3 +99,21 @@ export const DEFAULT_SETTINGS: Settings = {
 
 export const DEFAULT_GOAL =
   "A coding tutor that never dumps the finished solution. It asks Socratic questions, hints at the next step, and only shows a small snippet when the student is stuck. Stay in character across multiple turns.";
+
+/**
+ * Lift persisted settings from the old Edge/xAI picker onto `apiUrl` / `apiKey`.
+ *
+ * @param raw - Partial settings as stored in localStorage (any version).
+ */
+export function migrateSettings(raw: LegacySettings | undefined): Settings {
+  const src = { ...(raw ?? {}) };
+  const fromEdge = src.edgeUrl;
+  delete src.edgeUrl;
+  delete src.backend;
+  return {
+    ...DEFAULT_SETTINGS,
+    ...src,
+    apiUrl: (src.apiUrl || fromEdge || "").trim(),
+    apiKey: src.apiKey ?? "",
+  };
+}

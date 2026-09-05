@@ -1,4 +1,12 @@
-import type { ChatMessage, ModelRec, ResolvedBackend } from "./types";
+/**
+ * Chat completions against any OpenAI-compatible `/v1` server.
+ *
+ * Loopback and LAN URLs are fetched from the browser. Public hosts go through
+ * `/api/openai/*` so CORS and API keys stay off the page origin.
+ */
+
+import { apiUrlIsSelf, isBrowserDirectUrl, normalizeApiBase, openaiHeaders } from "./openai-url.ts";
+import type { ChatMessage, ModelRec } from "./types.ts";
 
 export type ChatResult = {
   text: string;
@@ -7,8 +15,8 @@ export type ChatResult = {
 };
 
 export type ChatRequest = {
-  backend: ResolvedBackend;
-  edgeUrl: string;
+  apiUrl: string;
+  apiKey?: string;
   model: string;
   messages: ChatMessage[];
   temperature?: number;
@@ -16,12 +24,6 @@ export type ChatRequest = {
   signal?: AbortSignal;
   onDelta?: (text: string) => void;
 };
-
-function normalizeEdgeUrl(url: string) {
-  const trimmed = url.trim().replace(/\/+$/, "");
-  if (!trimmed) return "http://127.0.0.1:8080";
-  return trimmed.endsWith("/v1") ? trimmed.slice(0, -3) : trimmed;
-}
 
 function sseChunks(buffer: string): { events: string[]; rest: string } {
   const parts = buffer.split("\n");
@@ -51,6 +53,11 @@ function readDelta(payload: DeltaPayload): { content: string; reasoning: string 
     (typeof delta?.reasoning_content === "string" ? delta.reasoning_content : "") ||
     (typeof delta?.reasoning === "string" ? delta.reasoning : "");
   return { content, reasoning };
+}
+
+function contentFromMessage(payload: DeltaPayload): string {
+  const content = payload.choices?.[0]?.message?.content;
+  return typeof content === "string" ? content : "";
 }
 
 async function readSseStream(
@@ -101,11 +108,38 @@ async function readSseStream(
   return { text: text.trim(), reasoning: reasoning.trim() || undefined, usage };
 }
 
-async function chatEdge(req: ChatRequest): Promise<ChatResult> {
-  const base = normalizeEdgeUrl(req.edgeUrl);
-  const res = await fetch(`${base}/v1/chat/completions`, {
+async function readChatResponse(
+  res: Response,
+  signal: AbortSignal | undefined,
+  onDelta?: (text: string) => void,
+): Promise<ChatResult> {
+  const ct = res.headers.get("content-type") || "";
+  if (ct.includes("text/event-stream") || ct.includes("text/plain")) {
+    return readSseStream(res, signal, onDelta);
+  }
+  const body = (await res.json()) as DeltaPayload;
+  const text = contentFromMessage(body).trim();
+  if (text) onDelta?.(text);
+  return {
+    text,
+    usage: body.usage
+      ? { prompt: body.usage.prompt_tokens ?? 0, completion: body.usage.completion_tokens ?? 0 }
+      : undefined,
+  };
+}
+
+function throwHttp(res: Response, body: string) {
+  if (res.status === 401 || res.status === 403) {
+    throw new Error("Unauthorized. Check the API key.");
+  }
+  throw new Error(body.slice(0, 280) || `HTTP ${res.status}`);
+}
+
+async function chatDirect(req: ChatRequest): Promise<ChatResult> {
+  const base = normalizeApiBase(req.apiUrl);
+  const res = await fetch(`${base}/chat/completions`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: openaiHeaders(req.apiKey),
     signal: req.signal,
     body: JSON.stringify({
       model: req.model,
@@ -117,17 +151,19 @@ async function chatEdge(req: ChatRequest): Promise<ChatResult> {
   });
   if (!res.ok) {
     const err = await res.text().catch(() => "");
-    throw new Error(err.slice(0, 280) || `Edge HTTP ${res.status}`);
+    throwHttp(res, err);
   }
-  return readSseStream(res, req.signal, req.onDelta);
+  return readChatResponse(res, req.signal, req.onDelta);
 }
 
-async function chatXai(req: ChatRequest): Promise<ChatResult> {
-  const res = await fetch("/api/xai/chat", {
+async function chatProxied(req: ChatRequest): Promise<ChatResult> {
+  const res = await fetch("/api/openai/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     signal: req.signal,
     body: JSON.stringify({
+      baseUrl: req.apiUrl,
+      apiKey: req.apiKey || undefined,
       model: req.model,
       temperature: req.temperature ?? 0.4,
       max_tokens: req.maxTokens ?? 1200,
@@ -136,52 +172,82 @@ async function chatXai(req: ChatRequest): Promise<ChatResult> {
   });
   if (!res.ok) {
     const err = await res.text().catch(() => "");
-    throw new Error(err.slice(0, 280) || `xAI HTTP ${res.status}`);
+    let message = err;
+    try {
+      const parsed = JSON.parse(err) as { error?: string };
+      if (parsed.error) message = parsed.error;
+    } catch {
+      /* raw */
+    }
+    throwHttp(res, message);
   }
-  return readSseStream(res, req.signal, req.onDelta);
+  return readChatResponse(res, req.signal, req.onDelta);
 }
 
+/**
+ * Stream a chat completion from the configured OpenAI-compatible server.
+ *
+ * @param req - Model, messages, and the API address/key from settings.
+ */
 export async function chat(req: ChatRequest): Promise<ChatResult> {
   if (!req.model) throw new Error("No model selected");
-  return req.backend === "edge" ? chatEdge(req) : chatXai(req);
+  if (!req.apiUrl.trim()) throw new Error("Enter an OpenAI-compatible API address");
+  if (apiUrlIsSelf(req.apiUrl)) {
+    throw new Error("That URL is this app. Point it at an OpenAI-compatible server.");
+  }
+  try {
+    return isBrowserDirectUrl(req.apiUrl) ? await chatDirect(req) : await chatProxied(req);
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") throw err;
+    if (err instanceof TypeError) {
+      throw new Error("Could not reach that API. Check the address and CORS.");
+    }
+    throw err;
+  }
 }
 
-export async function stopEdge(edgeUrl: string, model?: string) {
-  const base = normalizeEdgeUrl(edgeUrl);
+/**
+ * Best-effort stop for local servers that implement `POST /v1/stop` (Edge).
+ *
+ * @param apiUrl - Local OpenAI-compatible base URL.
+ * @param model - Optional model id some servers use to pick the worker.
+ */
+export async function stopLocal(apiUrl: string, model?: string) {
+  if (!apiUrl.trim() || !isBrowserDirectUrl(apiUrl)) return;
   try {
-    await fetch(`${base}/v1/stop`, {
+    const base = normalizeApiBase(apiUrl);
+    await fetch(`${base}/stop`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(model ? { model } : {}),
       signal: AbortSignal.timeout(2500),
     });
   } catch {
-    /* ignore */
+    /* optional, Edge-style only */
   }
 }
 
-export async function listEdgeModels(edgeUrl: string): Promise<ModelRec[]> {
-  const base = normalizeEdgeUrl(edgeUrl);
-  const res = await fetch(`${base}/v1/models`, {
-    signal: AbortSignal.timeout(2500),
-  });
-  if (!res.ok) throw new Error(`Edge HTTP ${res.status}`);
-  const body = (await res.json()) as {
-    data?: {
-      id?: string;
-      owned_by?: string;
-      context_length?: number;
-      max_model_len?: number;
-    }[];
-  };
+/**
+ * Map an OpenAI `/v1/models` body onto {@link ModelRec} rows.
+ *
+ * Image, audio, and embedding ids are dropped so Parent/Child only see chat
+ * models.
+ *
+ * @param body - OpenAI `{data: [...]}` or a `{models: [...]}` alias.
+ */
+export function parseModelRows(body: {
+  data?: { id?: string; owned_by?: string; context_length?: number; max_model_len?: number }[];
+  models?: { id?: string; owned_by?: string; context_length?: number; max_model_len?: number }[];
+}): ModelRec[] {
+  const rows = body.data ?? body.models ?? [];
   const models: ModelRec[] = [];
-  for (const row of body.data ?? []) {
+  for (const row of rows) {
     const id = String(row.id || "").trim();
     if (!id) continue;
+    if (/imagine|image|tts|voice|embedding|whisper|dall-e|moderation/i.test(id)) continue;
     models.push({
       id,
       name: id.split("/").filter(Boolean).pop() || id,
-      backend: "edge",
       contextLength: row.context_length ?? row.max_model_len,
       ownedBy: row.owned_by,
     });
@@ -189,35 +255,89 @@ export async function listEdgeModels(edgeUrl: string): Promise<ModelRec[]> {
   return models;
 }
 
-export async function listXaiModels(): Promise<ModelRec[]> {
-  const res = await fetch("/api/xai/models", { signal: AbortSignal.timeout(8000) });
+async function listDirect(apiUrl: string, apiKey?: string): Promise<ModelRec[]> {
+  const base = normalizeApiBase(apiUrl);
+  const res = await fetch(`${base}/models`, {
+    headers: openaiHeaders(apiKey),
+    signal: AbortSignal.timeout(8000),
+  });
   if (!res.ok) {
     const err = await res.text().catch(() => "");
-    throw new Error(err.slice(0, 200) || `xAI HTTP ${res.status}`);
+    throwHttp(res, err);
   }
-  const body = (await res.json()) as { models?: { id: string }[]; error?: string };
+  return parseModelRows((await res.json()) as Parameters<typeof parseModelRows>[0]);
+}
+
+async function listProxied(apiUrl: string, apiKey?: string): Promise<ModelRec[]> {
+  const res = await fetch("/api/openai/models", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    signal: AbortSignal.timeout(10000),
+    body: JSON.stringify({ baseUrl: apiUrl, apiKey: apiKey || undefined }),
+  });
+  const body = (await res.json().catch(() => ({}))) as {
+    error?: string;
+    models?: { id?: string; owned_by?: string; context_length?: number; max_model_len?: number }[];
+  };
+  if (!res.ok) throwHttp(res, body.error || `HTTP ${res.status}`);
   if (body.error) throw new Error(body.error);
-  return (body.models ?? []).map((row) => ({
-    id: row.id,
-    name: row.id,
-    backend: "xai" as const,
-  }));
+  return parseModelRows({ models: body.models });
 }
 
-export function modelBackend(id: string, models: ModelRec[]): ResolvedBackend | null {
-  return models.find((m) => m.id === id)?.backend ?? null;
+/**
+ * List chat models from an OpenAI-compatible server.
+ *
+ * @param apiUrl - User-entered API address.
+ * @param apiKey - Optional bearer token.
+ */
+export async function listModels(apiUrl: string, apiKey?: string): Promise<ModelRec[]> {
+  if (!apiUrl.trim()) throw new Error("Enter an OpenAI-compatible API address");
+  if (apiUrlIsSelf(apiUrl)) {
+    throw new Error("That URL is this app. Point it at an OpenAI-compatible server.");
+  }
+  try {
+    return isBrowserDirectUrl(apiUrl)
+      ? await listDirect(apiUrl, apiKey)
+      : await listProxied(apiUrl, apiKey);
+  } catch (err) {
+    if (err instanceof TypeError) {
+      throw new Error("Could not reach that API. Check the address and CORS.");
+    }
+    throw err;
+  }
 }
 
+/**
+ * Pick a capable parent and a distinct (often smaller) child from a catalog.
+ *
+ * @param models - Models currently listed by the API.
+ */
 export function pickDefaultModels(models: ModelRec[]): { parent: string; child: string } {
   if (!models.length) return { parent: "", child: "" };
   const preferParent = (id: string) =>
-    /grok-4|grok-3(?!-mini)|qwen.*72|qwen.*32|llama.*70|mistral.*large|minimax|opus|sonnet/i.test(
+    /grok-4|grok-3(?!-mini)|qwen.*72|qwen.*32|llama.*70|mistral.*large|minimax|opus|sonnet|gpt-4|gpt-5/i.test(
       id,
     );
   const parent = models.find((m) => preferParent(m.id)) ?? models[0];
   const child =
+    models.find((m) => m.id !== parent.id && /mini|8b|7b|3b|instruct|small/i.test(m.id)) ??
     models.find((m) => m.id !== parent.id) ??
-    models.find((m) => /mini|8b|7b|3b|instruct/i.test(m.id)) ??
     parent;
   return { parent: parent.id, child: child.id };
+}
+
+/**
+ * Deduplicate models by id, keeping first occurrence.
+ *
+ * @param models - Models returned by the API.
+ */
+export function uniqueModels(models: ModelRec[]): ModelRec[] {
+  const seen = new Set<string>();
+  const out: ModelRec[] = [];
+  for (const m of models) {
+    if (seen.has(m.id)) continue;
+    seen.add(m.id);
+    out.push(m);
+  }
+  return out;
 }

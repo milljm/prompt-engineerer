@@ -1,10 +1,17 @@
+/**
+ * Zustand store for studio settings, prompt versions, and the live run.
+ * Settings/goal/versions persist to localStorage under `pe-engine`.
+ */
+
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import {
   DEFAULT_GOAL,
   DEFAULT_SETTINGS,
+  migrateSettings,
   type ConnectionState,
   type IterationRecord,
+  type LegacySettings,
   type PromptVersion,
   type RunStatus,
   type Settings,
@@ -47,8 +54,9 @@ type EngineStore = {
 };
 
 const emptyConnection: ConnectionState = {
-  edge: { ok: false, url: DEFAULT_SETTINGS.edgeUrl, error: null },
-  xai: { ok: false, error: null },
+  ok: false,
+  url: "",
+  error: null,
   models: [],
   probing: false,
 };
@@ -152,6 +160,7 @@ export const useEngineStore = create<EngineStore>()(
     }),
     {
       name: "pe-engine",
+      version: 2,
       partialize: (s) => ({
         settings: s.settings,
         goal: s.goal,
@@ -160,6 +169,10 @@ export const useEngineStore = create<EngineStore>()(
         currentRev: s.currentRev,
         iterations: s.iterations.slice(-24),
       }),
+      migrate: (persisted) => {
+        const p = (persisted ?? {}) as { settings?: LegacySettings };
+        return { ...p, settings: migrateSettings(p.settings) };
+      },
     },
   ),
 );
