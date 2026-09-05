@@ -145,6 +145,13 @@ function LiveTranscript({ lines }: { lines: LiveLine[] }) {
 }
 
 function LiveLineView({ line }: { line: LiveLine }) {
+  if (line.role === "scenario") {
+    return (
+      <div className="my-2 rounded-md bg-accent px-2 py-1.5 text-center font-mono text-[10px] uppercase tracking-[0.12em] text-foreground">
+        {line.text}
+      </div>
+    );
+  }
   if (line.role === "separator") {
     return <TurnRule label={line.text} />;
   }

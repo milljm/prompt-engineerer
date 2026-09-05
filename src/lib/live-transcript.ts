@@ -5,7 +5,7 @@
 
 import { uid } from "./utils.ts";
 
-export type LiveRole = "separator" | "parent" | "child";
+export type LiveRole = "separator" | "scenario" | "parent" | "child";
 
 export type LiveLine = {
   id: string;
@@ -15,21 +15,37 @@ export type LiveLine = {
 
 export type LiveEvent =
   | { type: "clear" }
+  | { type: "scenario"; name: string; index: number; of: number }
   | { type: "separator"; scenario: string; turn: number; of: number }
   | { type: "parent"; text: string }
   | { type: "child-start" }
   | { type: "child-delta"; text: string };
 
 /**
+ * Banner when a new scenario starts (so turn 1 after turn N is not a reset).
+ *
+ * @param name - Scenario name.
+ * @param index - 1-based scenario index.
+ * @param of - Total scenarios this Child pass (judgement after the last).
+ */
+export function scenarioLabel(name: string, index: number, of: number): string {
+  const n = name.trim() || "Scenario";
+  if (of <= 1) return `Scenario · ${n}`;
+  const rest = of - index;
+  const tail =
+    rest > 0 ? ` · ${rest} more before judgement` : " · last one, then judgement";
+  return `Scenario ${index} of ${of} · ${n}${tail}`;
+}
+
+/**
  * Label for a turn rule in the live pane.
  *
- * @param scenario - Scenario name from Parent.
+ * @param _scenario - Unused; scenario is shown on its own banner.
  * @param turn - 1-based turn index.
  * @param of - Planned turns in this scenario.
  */
-export function turnLabel(scenario: string, turn: number, of: number): string {
-  const name = scenario.trim() || "Scenario";
-  return of > 1 ? `Turn ${turn} of ${of} · ${name}` : `Turn ${turn} · ${name}`;
+export function turnLabel(_scenario: string, turn: number, of: number): string {
+  return of > 1 ? `Turn ${turn} of ${of}` : `Turn ${turn}`;
 }
 
 /**
@@ -47,6 +63,11 @@ export function applyLiveEvent(
   switch (event.type) {
     case "clear":
       return [];
+    case "scenario":
+      return [
+        ...lines,
+        { id: nextId(), role: "scenario", text: scenarioLabel(event.name, event.index, event.of) },
+      ];
     case "separator":
       return [...lines, { id: nextId(), role: "separator", text: turnLabel(event.scenario, event.turn, event.of) }];
     case "parent":

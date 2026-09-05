@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 import {
   fallbackScenarios,
   historyBrief,
+  isMetaUserTurn,
   parseParentReply,
+  sanitizeTurns,
   scoreTrend,
 } from "./parent-protocol.ts";
 import type { PromptVersion } from "./types.ts";
@@ -60,6 +62,9 @@ describe("parseParentReply", () => {
     assert.equal(reply.score, 10);
     assert.equal(reply.scenarios[0]?.name, "Scenario 1");
     assert.equal(reply.scenarios[0]?.turns.length, 3);
+    for (const turn of reply.scenarios[0]?.turns ?? []) {
+      assert.equal(isMetaUserTurn(turn.user), false);
+    }
   });
 
   it("rejects a non-object", () => {
@@ -116,5 +121,26 @@ describe("fallbackScenarios", () => {
     assert.equal(specs[0]?.turns.length, 3);
     assert.equal(specs[1]?.turns.length, 3);
     assert.match(specs[0]?.turns[0]?.user ?? "", /haiku/);
+    for (const spec of specs) {
+      for (const turn of spec.turns) {
+        assert.equal(isMetaUserTurn(turn.user), false);
+      }
+    }
+  });
+});
+
+describe("sanitizeTurns", () => {
+  it("replaces the old probe pad with an in-character follow-up", () => {
+    const out = sanitizeTurns(
+      [
+        { user: "Help me write a test." },
+        { user: "Follow up: probe whether the assistant still follows the system prompt." },
+      ],
+      2,
+    );
+    assert.equal(out.length, 2);
+    assert.equal(out[0]?.user, "Help me write a test.");
+    assert.notEqual(out[1]?.user, "Follow up: probe whether the assistant still follows the system prompt.");
+    assert.equal(isMetaUserTurn(out[1]?.user ?? ""), false);
   });
 });

@@ -86,12 +86,27 @@ async function runScenarios(
   input: EngineInput,
   prompt: string,
   scenarios: ScenarioSpec[],
+  iteration: number,
 ): Promise<ScenarioResult[]> {
   const { settings, signal, onEvent } = input;
   const out: ScenarioResult[] = [];
   onEvent({ type: "live", event: { type: "clear" } });
-  for (const spec of scenarios) {
+  for (let s = 0; s < scenarios.length; s++) {
     throwIfAborted(signal);
+    const spec = scenarios[s];
+    const remaining = scenarios.length - s - 1;
+    onEvent({
+      type: "phase",
+      phase:
+        remaining > 0
+          ? `Scenario ${s + 1} of ${scenarios.length}: ${spec.name} (${remaining} more, then judgement)`
+          : `Scenario ${s + 1} of ${scenarios.length}: ${spec.name} — then Parent judges`,
+      iteration,
+    });
+    onEvent({
+      type: "live",
+      event: { type: "scenario", name: spec.name, index: s + 1, of: scenarios.length },
+    });
     const turns: ScenarioResult["turns"] = [];
     const history: ChatMessage[] = [{ role: "system", content: prompt }];
     const planned = spec.turns.slice(0, Math.max(1, settings.turns));
@@ -237,13 +252,8 @@ export async function runEngine(input: EngineInput) {
           : fallbackScenarios(goal, settings.turns);
       pendingScenarios = null;
 
-      onEvent({
-        type: "phase",
-        phase: `Child running ${scenarios.length} scenario${scenarios.length === 1 ? "" : "s"}…`,
-        iteration: i,
-      });
       const tChild = performance.now();
-      const results = await runScenarios(input, promptText, scenarios);
+      const results = await runScenarios(input, promptText, scenarios, i);
       childMs += performance.now() - tChild;
 
       throwIfAborted(signal);

@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { applyLiveEvent, turnLabel, type LiveLine } from "./live-transcript.ts";
+import { applyLiveEvent, scenarioLabel, turnLabel, type LiveLine } from "./live-transcript.ts";
 
 function ids() {
   let n = 0;
@@ -9,11 +9,18 @@ function ids() {
 
 describe("turnLabel", () => {
   it("omits the of-N when there is a single turn", () => {
-    assert.equal(turnLabel("Socratic", 1, 1), "Turn 1 · Socratic");
+    assert.equal(turnLabel("Socratic", 1, 1), "Turn 1");
   });
 
   it("includes of-N for multi-turn scenarios", () => {
-    assert.equal(turnLabel("Drift", 2, 3), "Turn 2 of 3 · Drift");
+    assert.equal(turnLabel("Drift", 2, 3), "Turn 2 of 3");
+  });
+});
+
+describe("scenarioLabel", () => {
+  it("says when judgement is coming", () => {
+    assert.match(scenarioLabel("Pressure", 1, 2), /Scenario 1 of 2 · Pressure · 1 more before judgement/);
+    assert.match(scenarioLabel("Pressure", 2, 2), /last one, then judgement/);
   });
 });
 
@@ -22,6 +29,7 @@ describe("applyLiveEvent", () => {
     const id = ids();
     let lines: LiveLine[] = [];
     lines = applyLiveEvent(lines, { type: "clear" }, id);
+    lines = applyLiveEvent(lines, { type: "scenario", name: "Tutor", index: 1, of: 2 }, id);
     lines = applyLiveEvent(lines, { type: "separator", scenario: "Tutor", turn: 1, of: 2 }, id);
     lines = applyLiveEvent(lines, { type: "parent", text: "What test first?" }, id);
     lines = applyLiveEvent(lines, { type: "child-start" }, id);
@@ -35,10 +43,11 @@ describe("applyLiveEvent", () => {
     assert.deepEqual(
       lines.map((l) => `${l.role}:${l.text}`),
       [
-        "separator:Turn 1 of 2 · Tutor",
+        "scenario:Scenario 1 of 2 · Tutor · 1 more before judgement",
+        "separator:Turn 1 of 2",
         "parent:What test first?",
         "child:A failing unit test.",
-        "separator:Turn 2 of 2 · Tutor",
+        "separator:Turn 2 of 2",
         "parent:Still no solution.",
         "child:What have you tried?",
       ],
