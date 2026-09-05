@@ -4,6 +4,7 @@ import {
   fallbackScenarios,
   historyBrief,
   isMetaUserTurn,
+  parseFollowUp,
   parseParentReply,
   sanitizeTurns,
   scoreTrend,
@@ -142,5 +143,23 @@ describe("sanitizeTurns", () => {
     assert.equal(out[0]?.user, "Help me write a test.");
     assert.notEqual(out[1]?.user, "Follow up: probe whether the assistant still follows the system prompt.");
     assert.equal(isMetaUserTurn(out[1]?.user ?? ""), false);
+  });
+});
+
+describe("parseFollowUp", () => {
+  it("keeps an in-character next turn", () => {
+    const follow = parseFollowUp({ continue: true, user: "Do it shorter." });
+    assert.equal(follow.continue, true);
+    assert.equal(follow.user, "Do it shorter.");
+  });
+
+  it("drops a meta follow-up and treats continue=false as stop", () => {
+    assert.equal(parseFollowUp({ continue: false, user: "ok" }).continue, false);
+    const meta = parseFollowUp({
+      continue: true,
+      user: "Follow up: probe whether the assistant still follows the system prompt.",
+    });
+    assert.equal(isMetaUserTurn(meta.user), false);
+    assert.equal(meta.continue, true);
   });
 });

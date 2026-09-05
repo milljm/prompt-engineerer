@@ -10,9 +10,12 @@ import { extractJsonObject } from "./json";
 import { chat, stopLocal } from "./inference";
 import { isBrowserDirectUrl } from "./openai-url";
 import {
+  PARENT_FOLLOWUP_SYSTEM,
   PARENT_SYSTEM,
   fallbackScenarios,
   historyBrief,
+  inCharacterFollowUp,
+  parseFollowUp,
   parseParentReply,
   type ParentReply,
 } from "./parent-protocol";
@@ -57,6 +60,7 @@ async function parentCall(
 ): Promise<ParentReply> {
   const { settings, signal } = input;
   const run = async (nudge?: string) => {
+    onDelta("");
     const messages: ChatMessage[] = [
       { role: "system", content: PARENT_SYSTEM },
       { role: "user", content: nudge ? `${user}\n\n${nudge}` : user },
@@ -78,7 +82,44 @@ async function parentCall(
     return await run();
   } catch (err) {
     if (err instanceof DOMException && err.name === "AbortError") throw err;
-    return run("Your previous reply was not valid JSON. Return ONLY the JSON object.");
+    return run("Your previous reply was not valid JSON. Return ONLY the JSON object. Apostrophes must be bare: write don't, never don\\'t.");
+  }
+}
+
+async function parentFollowUp(
+  input: EngineInput,
+  prompt: {
+    goal: string;
+    scenario: string;
+    turn: number;
+    of: number;
+    systemPrompt: string;
+    transcript: string;
+  },
+): Promise<{ kind: "next"; user: string } | { kind: "stop" } | { kind: "fail" }> {
+  const { settings, signal, onEvent } = input;
+  onEvent({ type: "parent-delta", text: "" });
+  const user = `GOAL:\n${prompt.goal}\n\nSCENARIO: ${prompt.scenario}\nYou are writing user turn ${prompt.turn} of ${prompt.of}.\n\nCHILD SYSTEM PROMPT:\n${prompt.systemPrompt}\n\nTRANSCRIPT SO FAR:\n${prompt.transcript}\n\nWrite the next user message to Child. JSON only.`;
+  try {
+    const result = await chat({
+      apiUrl: settings.apiUrl,
+      apiKey: settings.apiKey,
+      model: settings.parentModel,
+      messages: [
+        { role: "system", content: PARENT_FOLLOWUP_SYSTEM },
+        { role: "user", content: user },
+      ],
+      temperature: 0.4,
+      maxTokens: 400,
+      signal,
+      onDelta: (text) => onEvent({ type: "parent-delta", text }),
+    });
+    const follow = parseFollowUp(extractJsonObject(result.text));
+    if (!follow.continue || !follow.user) return { kind: "stop" };
+    return { kind: "next", user: follow.user };
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") throw err;
+    return { kind: "fail" };
   }
 }
 
@@ -110,16 +151,49 @@ async function runScenarios(
     const turns: ScenarioResult["turns"] = [];
     const history: ChatMessage[] = [{ role: "system", content: prompt }];
     const planned = spec.turns.slice(0, Math.max(1, settings.turns));
-    for (let n = 0; n < planned.length; n++) {
+    const maxTurns = Math.max(1, settings.turns);
+    for (let n = 0; n < maxTurns; n++) {
       throwIfAborted(signal);
-      const turn = planned[n];
+      let userText = "";
+      if (n === 0) {
+        userText = planned[0]?.user || inCharacterFollowUp("", 0);
+      } else {
+        onEvent({
+          type: "phase",
+          phase: `Parent writing turn ${n + 1} of ${maxTurns} · ${spec.name}`,
+          iteration,
+        });
+        const transcript = turns
+          .map((t, i) => `User ${i + 1}: ${t.user}\nChild ${i + 1}:\n${t.assistant}`)
+          .join("\n\n");
+        const follow = await parentFollowUp(input, {
+          goal: input.goal,
+          scenario: spec.name,
+          turn: n + 1,
+          of: maxTurns,
+          systemPrompt: prompt,
+          transcript,
+        });
+        if (follow.kind === "next") userText = follow.user;
+        else if (follow.kind === "fail") {
+          userText = planned[n]?.user || inCharacterFollowUp(turns[0]?.user ?? "", n);
+        } else break;
+      }
+      onEvent({
+        type: "phase",
+        phase:
+          remaining > 0
+            ? `Scenario ${s + 1} of ${scenarios.length}: ${spec.name} · turn ${n + 1} of ${maxTurns}`
+            : `Scenario ${s + 1} of ${scenarios.length}: ${spec.name} · turn ${n + 1} of ${maxTurns} — then judgement`,
+        iteration,
+      });
       onEvent({
         type: "live",
-        event: { type: "separator", scenario: spec.name, turn: n + 1, of: planned.length },
+        event: { type: "separator", scenario: spec.name, turn: n + 1, of: maxTurns },
       });
-      onEvent({ type: "live", event: { type: "parent", text: turn.user } });
+      onEvent({ type: "live", event: { type: "parent", text: userText } });
       onEvent({ type: "live", event: { type: "child-start" } });
-      history.push({ role: "user", content: turn.user });
+      history.push({ role: "user", content: userText });
       const t0 = performance.now();
       const reply = await chat({
         apiUrl: settings.apiUrl,
@@ -133,7 +207,7 @@ async function runScenarios(
       });
       const assistant = reply.text || "(empty reply)";
       history.push({ role: "assistant", content: assistant });
-      turns.push({ user: turn.user, assistant, ms: performance.now() - t0 });
+      turns.push({ user: userText, assistant, ms: performance.now() - t0 });
     }
     out.push({ name: spec.name, turns });
   }

@@ -19,6 +19,7 @@ export function RunPanel({
   const status = useEngineStore((s) => s.status);
   const phase = useEngineStore((s) => s.phase);
   const liveLines = useEngineStore((s) => s.liveLines);
+  const liveParent = useEngineStore((s) => s.liveParent);
   const error = useEngineStore((s) => s.error);
   const iterations = useEngineStore((s) => s.iterations);
   const settings = useEngineStore((s) => s.settings);
@@ -72,7 +73,7 @@ export function RunPanel({
           ) : status === "passed" ? (
             <p className="truncate text-sm text-ok">Quality target reached.</p>
           ) : status === "failed" ? (
-            <p className="truncate text-sm text-destructive">{error ?? "Failed"}</p>
+            <p className="text-sm text-destructive">{error ?? "Failed"}</p>
           ) : status === "stopped" ? (
             <p className="truncate text-sm text-muted-foreground">Stopped.</p>
           ) : (
@@ -94,7 +95,8 @@ export function RunPanel({
 
       <ScrollArea className="min-h-0 flex-1">
         <div className="space-y-3 px-4 py-4 md:px-5">
-          {running && liveLines.length ? <LiveTranscript lines={liveLines} /> : null}
+          {liveLines.length ? <LiveTranscript lines={liveLines} /> : null}
+          {liveParent && (running || status === "failed") ? <LiveParent text={liveParent} /> : null}
 
           {!iterations.length && !running ? (
             <EmptyHint />
@@ -140,6 +142,35 @@ function LiveTranscript({ lines }: { lines: LiveLine[] }) {
           <LiveLineView key={line.id} line={line} />
         ))}
       </div>
+    </article>
+  );
+}
+
+function LiveParent({ text }: { text: string }) {
+  const scroller = useRef<HTMLPreElement>(null);
+  const pinned = useRef(true);
+
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el || !pinned.current) return;
+    pinToBottom(el);
+  }, [text]);
+
+  return (
+    <article className="flex max-h-48 min-h-0 flex-col overflow-hidden rounded-xl bg-card p-3 shadow-[var(--shadow-border)]">
+      <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+        Parent, live
+      </p>
+      <pre
+        ref={scroller}
+        onScroll={() => {
+          const el = scroller.current;
+          if (el) pinned.current = isPinnedToBottom(el);
+        }}
+        className="mt-2 min-h-0 flex-1 overflow-y-auto whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-muted-foreground"
+      >
+        {text}
+      </pre>
     </article>
   );
 }

@@ -26,6 +26,7 @@ Rules:
 - Each follow-up must be a new impatient/harder user line after Child's last reply, not a copy of the first turn and not a note to yourself.
 - When action is "pass", keep the current system_prompt and set pass=true.
 - When judging, you MUST include score (integer 1–10) and either pass, revise, or revert.
+- JSON strings use double quotes. Apostrophes are bare (write "don't", never "don\\'t"). Invalid escapes crash the run.
 
 JSON shape:
 {
@@ -37,6 +38,23 @@ JSON shape:
   "pass": false,
   "rationale": string
 }`;
+
+/** Short protocol for a live follow-up turn after Child replies. */
+export const PARENT_FOLLOWUP_SYSTEM = `You are Parent. Child just replied in a live test. Write the NEXT user message spoken TO Child.
+
+Return ONLY a JSON object. No markdown. No prose outside JSON.
+JSON strings use double quotes. Apostrophes are bare: write "don't", never "don\\'t".
+
+{
+  "continue": true,
+  "user": "a real user follow-up, in character"
+}
+
+Rules:
+- user is spoken TO Child. Never mention system prompts, probes, tests, or "in-character".
+- Poke whatever Child just got wrong (format, persona, refusal, a dodge). If Child did well, raise the difficulty.
+- continue=false (and user="") only if another turn would add nothing.
+- Keep user to 1–3 sentences.`;
 
 export type ParentAction = "draft" | "revise" | "revert" | "pass";
 
@@ -239,6 +257,30 @@ export function historyBrief(versions: PromptVersion[]): string {
     return `system prompt v${v.rev} [${v.status}]:\n${v.prompt.trim() || "(empty)"}\nscore: ${score}${note}`;
   });
   return `${scoreTrend(ordered)}\n---\n${blocks.join("\n---\n")}`;
+}
+
+export type ParentFollowUp = {
+  continue: boolean;
+  user: string;
+};
+
+/**
+ * Parse a live follow-up JSON object from Parent.
+ *
+ * @param raw - Value from {@link extractJsonObject}.
+ */
+export function parseFollowUp(raw: unknown): ParentFollowUp {
+  if (!raw || typeof raw !== "object") return { continue: false, user: "" };
+  const rec = raw as { continue?: unknown; user?: unknown; next?: unknown };
+  const userRaw =
+    typeof rec.user === "string"
+      ? rec.user.trim()
+      : typeof rec.next === "string"
+        ? rec.next.trim()
+        : "";
+  const keepGoing = rec.continue !== false && Boolean(userRaw);
+  const cleaned = keepGoing ? sanitizeTurns([{ user: userRaw }], 1)[0]?.user ?? "" : "";
+  return { continue: Boolean(cleaned), user: cleaned };
 }
 
 /**
