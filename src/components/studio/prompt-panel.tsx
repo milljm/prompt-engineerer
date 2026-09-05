@@ -1,8 +1,10 @@
+import { useEffect, useMemo, useRef, type Ref } from "react";
 import { RotateCcw, Undo2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
+import { diffLines } from "@/lib/diff";
 import { useEngineStore } from "@/lib/store";
 import type { PromptVersion } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -19,14 +21,26 @@ export function PromptPanel() {
   const setViewingRev = useEngineStore((s) => s.setViewingRev);
   const restoreRev = useEngineStore((s) => s.restoreRev);
   const abandonCurrent = useEngineStore((s) => s.abandonCurrent);
+  const chipScroller = useRef<HTMLDivElement>(null);
+  const activeChip = useRef<HTMLButtonElement>(null);
 
   const running = status === "running" || status === "stopping";
   const viewed =
     versions.find((v) => v.rev === viewingRev) ??
     versions.find((v) => v.rev === currentRev) ??
     null;
+  const baseline = versions.reduce<PromptVersion | null>(
+    (best, v) => (best == null || v.rev < best.rev ? v : best),
+    null,
+  );
   const promptValue = viewed ? viewed.prompt : seedPrompt;
   const canEditSeed = !running && versions.length === 0;
+  const showDiff =
+    Boolean(viewed && baseline && viewed.rev !== baseline.rev && viewed.prompt !== baseline.prompt);
+
+  useEffect(() => {
+    activeChip.current?.scrollIntoView({ behavior: "smooth", inline: "nearest", block: "nearest" });
+  }, [viewingRev, currentRev, versions.length]);
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -79,41 +93,94 @@ export function PromptPanel() {
       </div>
 
       {versions.length > 0 ? (
-        <div className="flex gap-1.5 overflow-x-auto border-b border-border px-4 py-2 md:px-5">
-          {versions.map((v) => (
-            <VersionChip
-              key={v.rev}
-              version={v}
-              active={v.rev === (viewingRev ?? currentRev)}
-              current={v.rev === currentRev}
-              onClick={() => setViewingRev(v.rev)}
-            />
-          ))}
+        <div className="min-w-0 border-b border-border">
+          <div
+            ref={chipScroller}
+            className="chip-scroll flex flex-nowrap gap-1.5 overflow-x-auto overscroll-x-contain px-4 py-2 md:px-5"
+            aria-label="Prompt revisions"
+          >
+            {versions.map((v) => (
+              <VersionChip
+                key={v.rev}
+                version={v}
+                active={v.rev === (viewingRev ?? currentRev)}
+                current={v.rev === currentRev}
+                innerRef={v.rev === (viewingRev ?? currentRev) ? activeChip : undefined}
+                onClick={() => setViewingRev(v.rev)}
+              />
+            ))}
+          </div>
         </div>
       ) : null}
 
       <ScrollArea className="min-h-0 flex-1">
         <div className="px-4 py-3 md:px-5">
-          <Textarea
-            value={promptValue}
-            disabled={running || !canEditSeed}
-            onChange={(e) => {
-              if (canEditSeed) setSeedPrompt(e.target.value);
-            }}
-            aria-label="System prompt under test"
-            placeholder="Leave blank and Parent will draft the first system prompt."
-            className="min-h-56 font-mono text-[13px] leading-relaxed bg-card"
-          />
+          {canEditSeed ? (
+            <Textarea
+              value={promptValue}
+              onChange={(e) => setSeedPrompt(e.target.value)}
+              aria-label="System prompt under test"
+              placeholder="Leave blank and Parent will draft the first system prompt."
+              className="min-h-56 font-mono text-[13px] leading-relaxed bg-card"
+            />
+          ) : showDiff && viewed && baseline ? (
+            <PromptDiff before={baseline.prompt} after={viewed.prompt} fromRev={baseline.rev} toRev={viewed.rev} />
+          ) : (
+            <pre className="min-h-56 whitespace-pre-wrap rounded-md bg-card p-3 font-mono text-[13px] leading-relaxed text-foreground shadow-[var(--shadow-border)]">
+              {promptValue || "Leave blank and Parent will draft the first system prompt."}
+            </pre>
+          )}
           {viewed?.rationale ? (
             <p className="mt-3 text-xs leading-relaxed text-muted-foreground">{viewed.rationale}</p>
           ) : (
             <p className="mt-3 text-xs text-muted-foreground">
               Parent owns this prompt once a run starts. Restore or abandon any revision from the
-              timeline — Parent sees that history too.
+              timeline — Parent sees every full prompt and its score.
             </p>
           )}
         </div>
       </ScrollArea>
+    </div>
+  );
+}
+
+function PromptDiff({
+  before,
+  after,
+  fromRev,
+  toRev,
+}: {
+  before: string;
+  after: string;
+  fromRev: number;
+  toRev: number;
+}) {
+  const ops = useMemo(() => diffLines(before, after), [before, after]);
+  return (
+    <div>
+      <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+        Diff v{fromRev} → v{toRev}
+        <span className="ml-2 normal-case tracking-normal">
+          <span className="text-ok">green added</span>
+          <span className="mx-1 text-muted-foreground">·</span>
+          <span className="text-destructive">red removed</span>
+        </span>
+      </p>
+      <pre className="min-h-56 overflow-x-auto whitespace-pre-wrap rounded-md bg-card p-3 font-mono text-[13px] leading-relaxed shadow-[var(--shadow-border)]">
+        {ops.map((op, i) => (
+          <span
+            key={`${op.type}-${i}-${op.text.slice(0, 24)}`}
+            className={cn(
+              "block",
+              op.type === "add" && "bg-ok/15 text-ok",
+              op.type === "del" && "bg-destructive/15 text-destructive",
+            )}
+          >
+            {op.type === "add" ? "+ " : op.type === "del" ? "− " : "  "}
+            {op.text || " "}
+          </span>
+        ))}
+      </pre>
     </div>
   );
 }
@@ -123,15 +190,18 @@ function VersionChip({
   active,
   current,
   onClick,
+  innerRef,
 }: {
   version: PromptVersion;
   active: boolean;
   current: boolean;
   onClick: () => void;
+  innerRef?: Ref<HTMLButtonElement>;
 }) {
   const score = version.score;
   return (
     <button
+      ref={innerRef}
       type="button"
       onClick={onClick}
       className={cn(

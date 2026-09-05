@@ -239,6 +239,20 @@ html[data-theme="light"] {
   .sidebar-resizer:focus-visible {
     outline: none;
   }
+
+  .chip-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklab, var(--pe-fg) 28%, transparent) transparent;
+  }
+
+  .chip-scroll::-webkit-scrollbar {
+    height: 8px;
+  }
+
+  .chip-scroll::-webkit-scrollbar-thumb {
+    border-radius: 99px;
+    background-color: color-mix(in oklab, var(--pe-fg) 28%, transparent);
+  }
 }
 
 @keyframes pe-shimmer {

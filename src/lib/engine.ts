@@ -209,7 +209,7 @@ export async function runEngine(input: EngineInput) {
         const cur = currentOf();
         reply = await parentCall(
           input,
-          `GOAL:\n${goal}\n\nCURRENT SYSTEM PROMPT (rev ${cur?.rev}):\n${cur?.prompt ?? ""}\n\nHISTORY:\n${historyBrief(versions)}\n\nDesign ${settings.turns}-turn test scenarios for this prompt. action should be "draft". Keep system_prompt unless it is clearly broken.`,
+          `GOAL:\n${goal}\n\nCURRENT SYSTEM PROMPT (rev ${cur?.rev}):\n${cur?.prompt ?? ""}\n\nREVISION LOG (full prompts + scores, oldest → newest):\n${historyBrief(versions)}\n\nDesign ${settings.turns}-turn test scenarios for this prompt. action should be "draft". Keep system_prompt unless it is clearly broken or scores have stalled.`,
           (text) => onEvent({ type: "parent-delta", text }),
         );
         pendingScenarios = reply.scenarios;
@@ -252,7 +252,7 @@ export async function runEngine(input: EngineInput) {
       const tJudge = performance.now();
       const judged = await parentCall(
         input,
-        `GOAL:\n${goal}\n\nCURRENT SYSTEM PROMPT (rev ${currentRev}):\n${promptText}\n\nHISTORY:\n${historyBrief(versions)}\n\nCHILD TRANSCRIPTS:\n${transcriptBlock(results)}\n\nScore 1–10. If score >= ${settings.targetScore}, action="pass". Otherwise revise the FULL system prompt or revert to a better rev. Include the next test scenarios.`,
+        `GOAL:\n${goal}\n\nCURRENT SYSTEM PROMPT (rev ${currentRev}):\n${promptText}\n\nREVISION LOG (full prompts + scores, oldest → newest). Use it to see whether you are improving or degrading:\n${historyBrief(versions)}\n\nCHILD TRANSCRIPTS:\n${transcriptBlock(results)}\n\nScore 1–10. If score >= ${settings.targetScore}, action="pass". If this score is below the best in the log, prefer action="revert" to that rev or a real rewrite — not a tiny edit of a loser. Otherwise revise the FULL system prompt. Include the next test scenarios.`,
         (text) => onEvent({ type: "parent-delta", text }),
       );
       parentMs += performance.now() - tJudge;

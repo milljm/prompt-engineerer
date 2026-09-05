@@ -15,8 +15,11 @@ Return ONLY a JSON object. No markdown fences. No prose outside JSON.
 Rules:
 - system_prompt must be the FULL prompt, never a diff or "add this line".
 - Scores: 1 = useless, 5 = mixed, 8 = reliably good, 10 = holds under multi-turn pressure.
-- Prefer surgical edits over rewrites unless the prompt is structurally wrong.
-- If an earlier revision scored higher, consider reverting (action="revert", revert_to=<rev>).
+- You are given EVERY prior revision: the full system prompt and its score. Read the trend.
+- Your job is to IMPROVE quality every iteration. If scores are dropping, you are going the wrong way — revert to the best rev or try a structurally different approach. Do not nibble at a failing prompt.
+- Prefer surgical edits over rewrites unless the prompt is structurally wrong or scores have stalled.
+- If an earlier revision scored higher, strongly consider reverting (action="revert", revert_to=<rev>).
+- Never resubmit a prompt that already scored lower than the best.
 - Scenarios must probe the stated goal (format, persona, refusals, consistency). Do not ask Child to produce disallowed content.
 - Multi-turn scenarios: each user turn pressures a different facet (persona drift, format, refusal, follow-through).
 - When action is "pass", keep the current system_prompt and set pass=true.
@@ -146,21 +149,39 @@ export function parseParentReply(raw: unknown, minTurns: number): ParentReply {
 }
 
 /**
- * Compact revision timeline Parent sees on later turns.
+ * One-line score path so Parent can see improve vs degrade at a glance.
  *
  * @param versions - Prompt versions accumulated this run.
- * @returns A newline-delimited brief, or `(none yet)`.
+ */
+export function scoreTrend(versions: PromptVersion[]): string {
+  const scored = [...versions].filter((v) => v.score != null).sort((a, b) => a.rev - b.rev);
+  if (!scored.length) return "No scores yet.";
+  if (scored.length === 1) return `Only one score so far: rev ${scored[0].rev} at ${scored[0].score}/10. Improve on it.`;
+  const path = scored.map((v) => `${v.score}`).join(" → ");
+  const first = scored[0].score as number;
+  const last = scored[scored.length - 1].score as number;
+  const best = scored.reduce((a, b) => ((a.score ?? 0) >= (b.score ?? 0) ? a : b));
+  let direction = "flat";
+  if (last > first) direction = "improving";
+  else if (last < first) direction = "degrading — revert or change strategy";
+  return `Score path: ${path} (${direction}). Best so far: rev ${best.rev} at ${best.score}/10. Beat that best score; do not wander.`;
+}
+
+/**
+ * Full revision log Parent sees on later turns: every system prompt and score.
+ *
+ * @param versions - Prompt versions accumulated this run.
+ * @returns Oldest → newest blocks, or `(none yet)`.
  */
 export function historyBrief(versions: PromptVersion[]): string {
   if (!versions.length) return "(none yet)";
-  return versions
-    .slice(-8)
-    .map((v) => {
-      const score = v.score == null ? "unscored" : `${v.score}/10`;
-      const snippet = v.prompt.replace(/\s+/g, " ").slice(0, 180);
-      return `rev ${v.rev} [${v.status}, ${score}]: ${snippet}`;
-    })
-    .join("\n");
+  const ordered = [...versions].sort((a, b) => a.rev - b.rev);
+  const blocks = ordered.map((v) => {
+    const score = v.score == null ? "unscored" : `${v.score}/10`;
+    const note = v.rationale.trim() ? `\nnote: ${v.rationale.trim()}` : "";
+    return `system prompt v${v.rev} [${v.status}]:\n${v.prompt.trim() || "(empty)"}\nscore: ${score}${note}`;
+  });
+  return `${scoreTrend(ordered)}\n---\n${blocks.join("\n---\n")}`;
 }
 
 /**
