@@ -63,12 +63,11 @@ export function AppShell() {
     useEngineStore.setState({
       status: "running",
       phase: "Starting…",
-      liveChild: "",
       liveParent: "",
+      liveLines: [],
       error: null,
     });
 
-    let liveChild = "";
     await runEngine({
       goal: state.goal,
       seedPrompt: state.seedPrompt,
@@ -80,8 +79,7 @@ export function AppShell() {
         const store = useEngineStore.getState();
         switch (event.type) {
           case "phase":
-            liveChild = "";
-            store.setRun({ phase: event.phase, liveChild: "", liveParent: "" });
+            store.setRun({ phase: event.phase, liveParent: "" });
             break;
           case "parent-delta":
             if (!event.text) {
@@ -92,14 +90,8 @@ export function AppShell() {
               });
             }
             break;
-          case "child-delta":
-            if (!event.text) {
-              liveChild = "";
-              store.setRun({ liveChild: "" });
-            } else {
-              liveChild += event.text;
-              store.setRun({ liveChild });
-            }
+          case "live":
+            store.applyLive(event.event);
             break;
           case "version":
             store.addVersion(event.version);

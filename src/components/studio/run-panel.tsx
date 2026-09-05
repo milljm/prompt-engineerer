@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { isPinnedToBottom, pinToBottom } from "@/lib/scroll";
 import { useEngineStore } from "@/lib/store";
-import type { IterationRecord } from "@/lib/types";
+import type { LiveLine } from "@/lib/live-transcript";
+import type { IterationRecord, ScenarioTurn } from "@/lib/types";
 import { cn, formatMs } from "@/lib/utils";
 
 export function RunPanel({
@@ -17,7 +18,7 @@ export function RunPanel({
 }) {
   const status = useEngineStore((s) => s.status);
   const phase = useEngineStore((s) => s.phase);
-  const liveChild = useEngineStore((s) => s.liveChild);
+  const liveLines = useEngineStore((s) => s.liveLines);
   const error = useEngineStore((s) => s.error);
   const iterations = useEngineStore((s) => s.iterations);
   const settings = useEngineStore((s) => s.settings);
@@ -93,7 +94,7 @@ export function RunPanel({
 
       <ScrollArea className="min-h-0 flex-1">
         <div className="space-y-3 px-4 py-4 md:px-5">
-          {running && liveChild ? <LiveChild text={liveChild} /> : null}
+          {running && liveLines.length ? <LiveTranscript lines={liveLines} /> : null}
 
           {!iterations.length && !running ? (
             <EmptyHint />
@@ -106,22 +107,22 @@ export function RunPanel({
   );
 }
 
-function LiveChild({ text }: { text: string }) {
-  const scroller = useRef<HTMLPreElement>(null);
+function LiveTranscript({ lines }: { lines: LiveLine[] }) {
+  const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
 
   useEffect(() => {
     const el = scroller.current;
     if (!el || !pinned.current) return;
     pinToBottom(el);
-  }, [text]);
+  }, [lines]);
 
   return (
-    <article className="flex h-72 min-h-0 flex-col overflow-hidden rounded-xl bg-secondary p-3 shadow-[var(--shadow-border)]">
+    <article className="flex h-96 min-h-0 flex-col overflow-hidden rounded-xl bg-secondary p-3 shadow-[var(--shadow-border)]">
       <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-        Child, live
+        Live test
       </p>
-      <pre
+      <div
         ref={scroller}
         onScroll={() => {
           const el = scroller.current;
@@ -133,11 +134,60 @@ function LiveChild({ text }: { text: string }) {
           const atBottom = isPinnedToBottom(el, 1) && event.deltaY > 0;
           if (!atTop && !atBottom) event.stopPropagation();
         }}
-        className="mt-2 min-h-0 flex-1 overflow-y-auto overscroll-contain whitespace-pre-wrap font-mono text-xs leading-relaxed text-foreground"
+        className="mt-2 min-h-0 flex-1 overflow-y-auto overscroll-contain"
       >
-        {text}
-      </pre>
+        {lines.map((line) => (
+          <LiveLineView key={line.id} line={line} />
+        ))}
+      </div>
     </article>
+  );
+}
+
+function LiveLineView({ line }: { line: LiveLine }) {
+  if (line.role === "separator") {
+    return <TurnRule label={line.text} />;
+  }
+  const isParent = line.role === "parent";
+  return (
+    <div className="py-1.5">
+      <Badge variant={isParent ? "parent" : "child"}>{isParent ? "Parent" : "Child"}</Badge>
+      <p className="mt-1 whitespace-pre-wrap font-mono text-xs leading-relaxed text-foreground">
+        {line.text || (isParent ? "" : "…")}
+      </p>
+    </div>
+  );
+}
+
+function TurnRule({ label }: { label: string }) {
+  return (
+    <div className="flex items-center gap-2 py-2">
+      <span className="h-px min-w-4 flex-1 bg-border" />
+      <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+        {label}
+      </span>
+      <span className="h-px min-w-4 flex-1 bg-border" />
+    </div>
+  );
+}
+
+function TurnDialogue({ turn, index, of }: { turn: ScenarioTurn; index: number; of: number }) {
+  return (
+    <div>
+      <TurnRule label={of > 1 ? `Turn ${index} of ${of}` : `Turn ${index}`} />
+      <div className="py-1.5">
+        <Badge variant="parent">Parent</Badge>
+        <p className="mt-1 whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-foreground">
+          {turn.user}
+        </p>
+      </div>
+      <div className="py-1.5">
+        <Badge variant="child">Child</Badge>
+        <p className="mt-1 whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-muted-foreground">
+          {turn.assistant}
+        </p>
+      </div>
+    </div>
   );
 }
 
@@ -210,11 +260,21 @@ function IterationCard({ record }: { record: IterationRecord }) {
           </span>
         ))}
       </div>
-      {record.scenarios[0]?.turns[0]?.assistant ? (
-        <pre className="mt-3 max-h-32 overflow-auto whitespace-pre-wrap rounded-md bg-secondary p-2 font-mono text-[11px] leading-relaxed text-muted-foreground">
-          {record.scenarios[0].turns[0].assistant.slice(0, 600)}
-          {record.scenarios[0].turns[0].assistant.length > 600 ? "…" : ""}
-        </pre>
+      {record.scenarios.length ? (
+        <div className="mt-3 max-h-64 overflow-auto rounded-md bg-secondary px-3 py-1">
+          {record.scenarios.map((s) => (
+            <div key={s.name} className="py-1">
+              {record.scenarios.length > 1 ? (
+                <p className="pt-2 text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                  {s.name}
+                </p>
+              ) : null}
+              {s.turns.map((turn, i) => (
+                <TurnDialogue key={`${s.name}-${i}`} turn={turn} index={i + 1} of={s.turns.length} />
+              ))}
+            </div>
+          ))}
+        </div>
       ) : null}
     </article>
   );

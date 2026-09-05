@@ -5,6 +5,7 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { applyLiveEvent, type LiveEvent, type LiveLine } from "./live-transcript.ts";
 import {
   DEFAULT_GOAL,
   DEFAULT_SETTINGS,
@@ -26,8 +27,8 @@ type EngineStore = {
   iterations: IterationRecord[];
   status: RunStatus;
   phase: string;
-  liveChild: string;
   liveParent: string;
+  liveLines: LiveLine[];
   error: string | null;
   connection: ConnectionState;
   viewingRev: number | null;
@@ -38,10 +39,11 @@ type EngineStore = {
   setRun: (patch: {
     status?: RunStatus;
     phase?: string;
-    liveChild?: string;
     liveParent?: string;
+    liveLines?: LiveLine[];
     error?: string | null;
   }) => void;
+  applyLive: (event: LiveEvent) => void;
   resetRun: () => void;
   addVersion: (version: PromptVersion) => void;
   updateVersion: (rev: number, patch: Partial<PromptVersion>) => void;
@@ -72,8 +74,8 @@ export const useEngineStore = create<EngineStore>()(
       iterations: [],
       status: "idle",
       phase: "",
-      liveChild: "",
       liveParent: "",
+      liveLines: [],
       error: null,
       connection: emptyConnection,
       viewingRev: null,
@@ -84,6 +86,8 @@ export const useEngineStore = create<EngineStore>()(
       setConnection: (patch) =>
         set((s) => ({ connection: { ...s.connection, ...patch } })),
       setRun: (patch) => set(patch),
+      applyLive: (event) =>
+        set((s) => ({ liveLines: applyLiveEvent(s.liveLines, event) })),
       resetRun: () =>
         set({
           versions: [],
@@ -91,8 +95,8 @@ export const useEngineStore = create<EngineStore>()(
           iterations: [],
           status: "idle",
           phase: "",
-          liveChild: "",
           liveParent: "",
+          liveLines: [],
           error: null,
           viewingRev: null,
         }),

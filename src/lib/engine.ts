@@ -25,11 +25,12 @@ import type {
   Settings,
 } from "./types";
 import { uid } from "./utils";
+import type { LiveEvent } from "./live-transcript.ts";
 
 export type EngineEvent =
   | { type: "phase"; phase: string; iteration: number }
   | { type: "parent-delta"; text: string }
-  | { type: "child-delta"; text: string }
+  | { type: "live"; event: LiveEvent }
   | { type: "version"; version: PromptVersion }
   | { type: "version-update"; rev: number; patch: Partial<PromptVersion> }
   | { type: "iteration"; record: IterationRecord }
@@ -85,16 +86,24 @@ async function runScenarios(
   input: EngineInput,
   prompt: string,
   scenarios: ScenarioSpec[],
-  onDelta: (t: string) => void,
 ): Promise<ScenarioResult[]> {
-  const { settings, signal } = input;
+  const { settings, signal, onEvent } = input;
   const out: ScenarioResult[] = [];
+  onEvent({ type: "live", event: { type: "clear" } });
   for (const spec of scenarios) {
     throwIfAborted(signal);
     const turns: ScenarioResult["turns"] = [];
     const history: ChatMessage[] = [{ role: "system", content: prompt }];
-    for (const turn of spec.turns.slice(0, Math.max(1, settings.turns))) {
+    const planned = spec.turns.slice(0, Math.max(1, settings.turns));
+    for (let n = 0; n < planned.length; n++) {
       throwIfAborted(signal);
+      const turn = planned[n];
+      onEvent({
+        type: "live",
+        event: { type: "separator", scenario: spec.name, turn: n + 1, of: planned.length },
+      });
+      onEvent({ type: "live", event: { type: "parent", text: turn.user } });
+      onEvent({ type: "live", event: { type: "child-start" } });
       history.push({ role: "user", content: turn.user });
       const t0 = performance.now();
       const reply = await chat({
@@ -105,7 +114,7 @@ async function runScenarios(
         temperature: settings.childTemperature,
         maxTokens: 900,
         signal,
-        onDelta,
+        onDelta: (text) => onEvent({ type: "live", event: { type: "child-delta", text } }),
       });
       const assistant = reply.text || "(empty reply)";
       history.push({ role: "assistant", content: assistant });
@@ -233,11 +242,8 @@ export async function runEngine(input: EngineInput) {
         phase: `Child running ${scenarios.length} scenario${scenarios.length === 1 ? "" : "s"}…`,
         iteration: i,
       });
-      onEvent({ type: "child-delta", text: "" });
       const tChild = performance.now();
-      const results = await runScenarios(input, promptText, scenarios, (text) =>
-        onEvent({ type: "child-delta", text }),
-      );
+      const results = await runScenarios(input, promptText, scenarios);
       childMs += performance.now() - tChild;
 
       throwIfAborted(signal);
