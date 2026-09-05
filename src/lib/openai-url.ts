@@ -5,6 +5,39 @@
  * proxied (public HTTPS APIs).
  */
 
+/** Stable error code the proxy returns when DNS lands on a private IP. */
+export const PRIVATE_HOST_CODE = "private_host";
+
+/**
+ * Thrown when an address is loopback/LAN (or DNS-resolves to one) so the
+ * server must not fetch it (SSRF) and the browser should call it directly.
+ */
+export class PrivateHostError extends Error {
+  readonly code = PRIVATE_HOST_CODE;
+  constructor(
+    message = "This API is on a private network. Your browser will call it directly.",
+  ) {
+    super(message);
+    this.name = "PrivateHostError";
+  }
+}
+
+/**
+ * True when an error (from the proxy or thrown locally) means "call this host
+ * from the browser, do not proxy it".
+ *
+ * @param err - Caught value from `listModels` / `chat` / the proxy.
+ */
+export function isPrivateHostError(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const rec = err as { code?: unknown; message?: unknown; name?: unknown };
+  if (rec.code === PRIVATE_HOST_CODE || rec.name === "PrivateHostError") return true;
+  return (
+    typeof rec.message === "string" &&
+    /private address|private network|local api addresses/i.test(rec.message)
+  );
+}
+
 /**
  * Parse a user-entered API address into a URL.
  *
@@ -69,8 +102,43 @@ export function isLoopbackHost(hostname: string): boolean {
   );
 }
 
+const LOCAL_SUFFIXES = [
+  ".local",
+  ".internal",
+  ".lan",
+  ".home",
+  ".localdomain",
+  ".ts.net",
+  ".tailscale.net",
+  ".arpa",
+];
+
 /**
- * Return true when `hostname` is loopback, link-local, or RFC1918 private.
+ * True for a hostname that is almost certainly not a public API
+ * (machine name, mDNS, Tailscale MagicDNS, `.lan`, …).
+ *
+ * @param hostname - Already lowercased, brackets stripped.
+ */
+function isLocalName(hostname: string): boolean {
+  if (LOCAL_SUFFIXES.some((s) => hostname.endsWith(s))) return true;
+  // Single-label names (`macstudio`, `edge`) resolve via mDNS / LAN DNS.
+  if (!hostname.includes(".") && !hostname.includes(":")) return true;
+  return false;
+}
+
+/**
+ * Pull an IPv4 out of `:ffff:192.168.0.1`-style mapped addresses.
+ *
+ * @param hostname - IPv6 address, brackets already stripped.
+ */
+function ipv4Mapped(hostname: string): string | null {
+  const m = hostname.match(/:ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i);
+  return m ? m[1] : null;
+}
+
+/**
+ * Return true when `hostname` is loopback, link-local, RFC1918, CGNAT,
+ * Tailscale, or a LAN-style name.
  *
  * Used both to send LAN traffic from the browser and to block those hosts
  * from the public proxy (SSRF).
@@ -80,7 +148,9 @@ export function isLoopbackHost(hostname: string): boolean {
 export function isPrivateOrLocalHost(hostname: string): boolean {
   const h = hostname.replace(/^\[|\]$/g, "").toLowerCase();
   if (isLoopbackHost(h)) return true;
-  if (h.endsWith(".local") || h.endsWith(".internal")) return true;
+  if (isLocalName(h)) return true;
+  const mapped = ipv4Mapped(h);
+  if (mapped) return isPrivateOrLocalHost(mapped);
   const v4 = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
   if (v4) {
     const a = Number(v4[1]);

@@ -1,9 +1,12 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  PRIVATE_HOST_CODE,
+  PrivateHostError,
   apiUrlIsSelf,
   isBrowserDirectUrl,
   isLoopbackHost,
+  isPrivateHostError,
   isPrivateOrLocalHost,
   normalizeApiBase,
   openaiHeaders,
@@ -66,6 +69,10 @@ describe("host classification", () => {
     assert.equal(isPrivateOrLocalHost("169.254.1.1"), true);
     assert.equal(isPrivateOrLocalHost("100.64.0.1"), true);
     assert.equal(isPrivateOrLocalHost("edge.local"), true);
+    assert.equal(isPrivateOrLocalHost("macstudio"), true);
+    assert.equal(isPrivateOrLocalHost("edge.lan"), true);
+    assert.equal(isPrivateOrLocalHost("box.tail1234.ts.net"), true);
+    assert.equal(isPrivateOrLocalHost("::ffff:192.168.1.9"), true);
     assert.equal(isPrivateOrLocalHost("api.openai.com"), false);
     assert.equal(isPrivateOrLocalHost("8.8.8.8"), false);
     assert.equal(isPrivateOrLocalHost("172.32.0.1"), false);
@@ -74,12 +81,26 @@ describe("host classification", () => {
   it("routes LAN URLs to the browser and public URLs to the proxy", () => {
     assert.equal(isBrowserDirectUrl("http://127.0.0.1:8080/v1"), true);
     assert.equal(isBrowserDirectUrl("http://192.168.1.50:11434/v1"), true);
+    assert.equal(isBrowserDirectUrl("http://macstudio:8080/v1"), true);
+    assert.equal(isBrowserDirectUrl("http://edge.lan:1234/v1"), true);
     assert.equal(isBrowserDirectUrl("https://api.x.ai/v1"), false);
     assert.equal(isBrowserDirectUrl("not a url"), false);
   });
 
   it("does not treat this process as the API when window is missing", () => {
     assert.equal(apiUrlIsSelf("http://127.0.0.1:8080"), false);
+  });
+});
+
+describe("isPrivateHostError", () => {
+  it("matches the proxy code and the legacy message", () => {
+    assert.equal(isPrivateHostError(new PrivateHostError()), true);
+    assert.equal(isPrivateHostError({ code: PRIVATE_HOST_CODE, message: "nope" }), true);
+    assert.equal(
+      isPrivateHostError(new Error("That host resolves to a private address and cannot be proxied.")),
+      true,
+    );
+    assert.equal(isPrivateHostError(new Error("Unauthorized")), false);
   });
 });
 

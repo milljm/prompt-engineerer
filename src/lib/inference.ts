@@ -5,7 +5,7 @@
  * `/api/openai/*` so CORS and API keys stay off the page origin.
  */
 
-import { apiUrlIsSelf, isBrowserDirectUrl, normalizeApiBase, openaiHeaders } from "./openai-url.ts";
+import { apiUrlIsSelf, isBrowserDirectUrl, isPrivateHostError, normalizeApiBase, openaiHeaders } from "./openai-url.ts";
 import type { ChatMessage, ModelRec } from "./types.ts";
 
 export type ChatResult = {
@@ -128,12 +128,55 @@ async function readChatResponse(
   };
 }
 
-function throwHttp(res: Response, body: string) {
+function throwHttp(res: Response, body: string, code?: string) {
   if (res.status === 401 || res.status === 403) {
     throw new Error("Unauthorized. Check the API key.");
   }
-  throw new Error(body.slice(0, 280) || `HTTP ${res.status}`);
+  const err = new Error(body.slice(0, 280) || `HTTP ${res.status}`) as Error & { code?: string };
+  if (code) err.code = code;
+  throw err;
 }
+
+function parseProxyFailure(raw: string): { message: string; code?: string } {
+  try {
+    const parsed = JSON.parse(raw) as { error?: string; code?: string };
+    return {
+      message: parsed.error || raw,
+      code: parsed.code,
+    };
+  } catch {
+    return { message: raw };
+  }
+}
+
+const DIRECT_HINT =
+  "This API is on a private network, so your browser called it directly. Enable CORS on that server, or use http://127.0.0.1:<port>/v1.";
+
+/**
+ * Public-looking hosts go through the proxy; if DNS says they are actually
+ * LAN/Tailscale/etc, retry from the browser instead of failing.
+ */
+async function viaProxyOrDirect<T>(
+  apiUrl: string,
+  direct: () => Promise<T>,
+  proxied: () => Promise<T>,
+): Promise<T> {
+  if (isBrowserDirectUrl(apiUrl)) return direct();
+  try {
+    return await proxied();
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") throw err;
+    if (!isPrivateHostError(err)) throw err;
+    try {
+      return await direct();
+    } catch (directErr) {
+      if (directErr instanceof DOMException && directErr.name === "AbortError") throw directErr;
+      if (directErr instanceof TypeError) throw new Error(DIRECT_HINT);
+      throw directErr;
+    }
+  }
+}
+
 
 async function chatDirect(req: ChatRequest): Promise<ChatResult> {
   const base = normalizeApiBase(req.apiUrl);
@@ -172,14 +215,8 @@ async function chatProxied(req: ChatRequest): Promise<ChatResult> {
   });
   if (!res.ok) {
     const err = await res.text().catch(() => "");
-    let message = err;
-    try {
-      const parsed = JSON.parse(err) as { error?: string };
-      if (parsed.error) message = parsed.error;
-    } catch {
-      /* raw */
-    }
-    throwHttp(res, message);
+    const parsed = parseProxyFailure(err);
+    throwHttp(res, parsed.message, parsed.code);
   }
   return readChatResponse(res, req.signal, req.onDelta);
 }
@@ -196,7 +233,7 @@ export async function chat(req: ChatRequest): Promise<ChatResult> {
     throw new Error("That URL is this app. Point it at an OpenAI-compatible server.");
   }
   try {
-    return isBrowserDirectUrl(req.apiUrl) ? await chatDirect(req) : await chatProxied(req);
+    return await viaProxyOrDirect(req.apiUrl, () => chatDirect(req), () => chatProxied(req));
   } catch (err) {
     if (err instanceof DOMException && err.name === "AbortError") throw err;
     if (err instanceof TypeError) {
@@ -277,10 +314,11 @@ async function listProxied(apiUrl: string, apiKey?: string): Promise<ModelRec[]>
   });
   const body = (await res.json().catch(() => ({}))) as {
     error?: string;
+    code?: string;
     models?: { id?: string; owned_by?: string; context_length?: number; max_model_len?: number }[];
   };
-  if (!res.ok) throwHttp(res, body.error || `HTTP ${res.status}`);
-  if (body.error) throw new Error(body.error);
+  if (!res.ok) throwHttp(res, body.error || `HTTP ${res.status}`, body.code);
+  if (body.error) throwHttp(res, body.error, body.code);
   return parseModelRows({ models: body.models });
 }
 
@@ -296,9 +334,11 @@ export async function listModels(apiUrl: string, apiKey?: string): Promise<Model
     throw new Error("That URL is this app. Point it at an OpenAI-compatible server.");
   }
   try {
-    return isBrowserDirectUrl(apiUrl)
-      ? await listDirect(apiUrl, apiKey)
-      : await listProxied(apiUrl, apiKey);
+    return await viaProxyOrDirect(
+      apiUrl,
+      () => listDirect(apiUrl, apiKey),
+      () => listProxied(apiUrl, apiKey),
+    );
   } catch (err) {
     if (err instanceof TypeError) {
       throw new Error("Could not reach that API. Check the address and CORS.");
