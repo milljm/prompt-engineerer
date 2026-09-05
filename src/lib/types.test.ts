@@ -30,4 +30,12 @@ describe("migrateSettings", () => {
     assert.equal(next.apiUrl, "https://api.openai.com/v1");
     assert.equal(next.apiKey, "sk-test");
   });
+
+  it("fills a missing sidebar width and clamps a huge one", () => {
+    assert.equal(migrateSettings({}).sidebarWidth, DEFAULT_SETTINGS.sidebarWidth);
+    assert.equal(migrateSettings({ sidebarAuto: false }).sidebarAuto, false);
+    const huge = migrateSettings({ sidebarWidth: 4000 });
+    assert.ok(huge.sidebarWidth < 4000);
+    assert.equal(huge.sidebarAuto, true);
+  });
 });

@@ -17,3 +17,7 @@ AGENTS.project.md
 .github_repo
 .node_modules.lock
 /tmp/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/

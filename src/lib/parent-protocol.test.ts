@@ -4,6 +4,7 @@ import {
   fallbackScenarios,
   historyBrief,
   parseParentReply,
+  scoreTrend,
 } from "./parent-protocol.ts";
 import type { PromptVersion } from "./types.ts";
 
@@ -68,20 +69,43 @@ describe("parseParentReply", () => {
 });
 
 describe("historyBrief", () => {
-  it("summarizes recent revisions", () => {
+  it("includes every full prompt, its score, and the trend", () => {
     const versions: PromptVersion[] = [
       {
         rev: 1,
         prompt: "Be helpful.\nAlways.",
-        rationale: "",
+        rationale: "first",
         score: 6,
         status: "tested",
         createdAt: 1,
         parentRev: null,
       },
+      {
+        rev: 2,
+        prompt: "Be terse.",
+        rationale: "worse",
+        score: 4,
+        status: "tested",
+        createdAt: 2,
+        parentRev: 1,
+      },
     ];
-    assert.match(historyBrief(versions), /rev 1 \[tested, 6\/10\]: Be helpful\. Always\./);
+    const brief = historyBrief(versions);
+    assert.match(brief, /Score path: 6 → 4 \(degrading/);
+    assert.match(brief, /Best so far: rev 1 at 6\/10/);
+    assert.match(brief, /system prompt v1 \[tested\]:\nBe helpful\.\nAlways\.\nscore: 6\/10/);
+    assert.match(brief, /system prompt v2 \[tested\]:\nBe terse\.\nscore: 4\/10/);
     assert.equal(historyBrief([]), "(none yet)");
+  });
+});
+
+describe("scoreTrend", () => {
+  it("calls out an improving path", () => {
+    const versions: PromptVersion[] = [
+      { rev: 1, prompt: "a", rationale: "", score: 5, status: "tested", createdAt: 1, parentRev: null },
+      { rev: 2, prompt: "b", rationale: "", score: 8, status: "champion", createdAt: 2, parentRev: 1 },
+    ];
+    assert.match(scoreTrend(versions), /5 → 8 \(improving\)/);
   });
 });
 

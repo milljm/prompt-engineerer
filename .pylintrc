@@ -1,0 +1,16 @@
+[MAIN]
+py-version=3.11
+ignore=node_modules,dist,.output,.nitro
+jobs=1
+
+[MESSAGES CONTROL]
+disable=
+    import-error,
+    missing-function-docstring,
+
+[FORMAT]
+max-line-length=110
+
+[DESIGN]
+max-args=8
+max-locals=20

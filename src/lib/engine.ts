@@ -25,11 +25,12 @@ import type {
   Settings,
 } from "./types";
 import { uid } from "./utils";
+import type { LiveEvent } from "./live-transcript.ts";
 
 export type EngineEvent =
   | { type: "phase"; phase: string; iteration: number }
   | { type: "parent-delta"; text: string }
-  | { type: "child-delta"; text: string }
+  | { type: "live"; event: LiveEvent }
   | { type: "version"; version: PromptVersion }
   | { type: "version-update"; rev: number; patch: Partial<PromptVersion> }
   | { type: "iteration"; record: IterationRecord }
@@ -85,16 +86,24 @@ async function runScenarios(
   input: EngineInput,
   prompt: string,
   scenarios: ScenarioSpec[],
-  onDelta: (t: string) => void,
 ): Promise<ScenarioResult[]> {
-  const { settings, signal } = input;
+  const { settings, signal, onEvent } = input;
   const out: ScenarioResult[] = [];
+  onEvent({ type: "live", event: { type: "clear" } });
   for (const spec of scenarios) {
     throwIfAborted(signal);
     const turns: ScenarioResult["turns"] = [];
     const history: ChatMessage[] = [{ role: "system", content: prompt }];
-    for (const turn of spec.turns.slice(0, Math.max(1, settings.turns))) {
+    const planned = spec.turns.slice(0, Math.max(1, settings.turns));
+    for (let n = 0; n < planned.length; n++) {
       throwIfAborted(signal);
+      const turn = planned[n];
+      onEvent({
+        type: "live",
+        event: { type: "separator", scenario: spec.name, turn: n + 1, of: planned.length },
+      });
+      onEvent({ type: "live", event: { type: "parent", text: turn.user } });
+      onEvent({ type: "live", event: { type: "child-start" } });
       history.push({ role: "user", content: turn.user });
       const t0 = performance.now();
       const reply = await chat({
@@ -105,7 +114,7 @@ async function runScenarios(
         temperature: settings.childTemperature,
         maxTokens: 900,
         signal,
-        onDelta,
+        onDelta: (text) => onEvent({ type: "live", event: { type: "child-delta", text } }),
       });
       const assistant = reply.text || "(empty reply)";
       history.push({ role: "assistant", content: assistant });
@@ -200,7 +209,7 @@ export async function runEngine(input: EngineInput) {
         const cur = currentOf();
         reply = await parentCall(
           input,
-          `GOAL:\n${goal}\n\nCURRENT SYSTEM PROMPT (rev ${cur?.rev}):\n${cur?.prompt ?? ""}\n\nHISTORY:\n${historyBrief(versions)}\n\nDesign ${settings.turns}-turn test scenarios for this prompt. action should be "draft". Keep system_prompt unless it is clearly broken.`,
+          `GOAL:\n${goal}\n\nCURRENT SYSTEM PROMPT (rev ${cur?.rev}):\n${cur?.prompt ?? ""}\n\nREVISION LOG (full prompts + scores, oldest → newest):\n${historyBrief(versions)}\n\nDesign ${settings.turns}-turn test scenarios for this prompt. action should be "draft". Keep system_prompt unless it is clearly broken or scores have stalled.`,
           (text) => onEvent({ type: "parent-delta", text }),
         );
         pendingScenarios = reply.scenarios;
@@ -233,11 +242,8 @@ export async function runEngine(input: EngineInput) {
         phase: `Child running ${scenarios.length} scenario${scenarios.length === 1 ? "" : "s"}…`,
         iteration: i,
       });
-      onEvent({ type: "child-delta", text: "" });
       const tChild = performance.now();
-      const results = await runScenarios(input, promptText, scenarios, (text) =>
-        onEvent({ type: "child-delta", text }),
-      );
+      const results = await runScenarios(input, promptText, scenarios);
       childMs += performance.now() - tChild;
 
       throwIfAborted(signal);
@@ -246,7 +252,7 @@ export async function runEngine(input: EngineInput) {
       const tJudge = performance.now();
       const judged = await parentCall(
         input,
-        `GOAL:\n${goal}\n\nCURRENT SYSTEM PROMPT (rev ${currentRev}):\n${promptText}\n\nHISTORY:\n${historyBrief(versions)}\n\nCHILD TRANSCRIPTS:\n${transcriptBlock(results)}\n\nScore 1–10. If score >= ${settings.targetScore}, action="pass". Otherwise revise the FULL system prompt or revert to a better rev. Include the next test scenarios.`,
+        `GOAL:\n${goal}\n\nCURRENT SYSTEM PROMPT (rev ${currentRev}):\n${promptText}\n\nREVISION LOG (full prompts + scores, oldest → newest). Use it to see whether you are improving or degrading:\n${historyBrief(versions)}\n\nCHILD TRANSCRIPTS:\n${transcriptBlock(results)}\n\nScore 1–10. If score >= ${settings.targetScore}, action="pass". If this score is below the best in the log, prefer action="revert" to that rev or a real rewrite — not a tiny edit of a loser. Otherwise revise the FULL system prompt. Include the next test scenarios.`,
         (text) => onEvent({ type: "parent-delta", text }),
       );
       parentMs += performance.now() - tJudge;
