@@ -83,6 +83,40 @@ class MainTests(unittest.TestCase):
         self.assertEqual(code, 7)
         run.assert_called_once_with(["npm", "test"], None)
 
+    def test_keyboard_interrupt_in_main_is_130(self) -> None:
+        with (
+            mock.patch.object(engineer, "which_node", return_value="/usr/bin/node"),
+            mock.patch.object(engineer, "need_install", return_value=False),
+            mock.patch.object(engineer, "run_command", side_effect=KeyboardInterrupt),
+        ):
+            self.assertEqual(engineer.main(["dev"]), 130)
+
+
+class StopChildTests(unittest.TestCase):
+    """Ctrl-C should stop the child instead of dumping a traceback."""
+
+    def test_stop_child_sends_sigint_then_wait(self) -> None:
+        proc = mock.Mock()
+        proc.poll.return_value = None
+        engineer.stop_child(proc)
+        proc.send_signal.assert_called_once()
+        proc.wait.assert_called()
+
+    def test_stop_child_skips_exited_process(self) -> None:
+        proc = mock.Mock()
+        proc.poll.return_value = 0
+        engineer.stop_child(proc)
+        proc.send_signal.assert_not_called()
+        proc.terminate.assert_not_called()
+
+    def test_run_command_keyboard_interrupt_is_130(self) -> None:
+        fake = mock.Mock()
+        fake.wait.side_effect = KeyboardInterrupt
+        fake.poll.return_value = None
+        with mock.patch("subprocess.Popen", return_value=fake):
+            self.assertEqual(engineer.run_command(["npm", "run", "dev"]), 130)
+        fake.send_signal.assert_called()
+
 
 if __name__ == "__main__":
     unittest.main()
