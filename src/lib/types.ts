@@ -3,6 +3,8 @@
  * iteration records. Persisted settings live in localStorage via the store.
  */
 
+import { SIDEBAR_DEFAULT, clampSidebarWidth } from "./sidebar.ts";
+
 /** A chat model listed by an OpenAI-compatible `/v1/models` endpoint. */
 export type ModelRec = {
   id: string;
@@ -81,6 +83,8 @@ export type Settings = {
   turns: number;
   maxIterations: number;
   childTemperature: number;
+  sidebarWidth: number;
+  sidebarAuto: boolean;
 };
 
 /** Pre-v2 persisted settings that still used the Edge/xAI backend picker. */
@@ -95,6 +99,8 @@ export const DEFAULT_SETTINGS: Settings = {
   turns: 2,
   maxIterations: 6,
   childTemperature: 0.7,
+  sidebarWidth: SIDEBAR_DEFAULT,
+  sidebarAuto: true,
 };
 
 export const DEFAULT_GOAL =
@@ -115,5 +121,7 @@ export function migrateSettings(raw: LegacySettings | undefined): Settings {
     ...src,
     apiUrl: (src.apiUrl || fromEdge || "").trim(),
     apiKey: src.apiKey ?? "",
+    sidebarWidth: clampSidebarWidth(src.sidebarWidth ?? DEFAULT_SETTINGS.sidebarWidth),
+    sidebarAuto: src.sidebarAuto !== false,
   };
 }

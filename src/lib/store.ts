@@ -160,7 +160,7 @@ export const useEngineStore = create<EngineStore>()(
     }),
     {
       name: "pe-engine",
-      version: 2,
+      version: 3,
       partialize: (s) => ({
         settings: s.settings,
         goal: s.goal,

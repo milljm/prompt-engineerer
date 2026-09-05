@@ -162,8 +162,8 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
                       className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-accent"
                     >
                       <span className="size-1.5 rounded-full bg-ok" />
-                      <span className="min-w-0 flex-1 truncate font-mono text-[11px]">
-                        {shortModel(m.name)}
+                      <span className="min-w-0 flex-1 break-all font-mono text-[11px] leading-snug">
+                        {m.name}
                       </span>
                       {isParent ? <Badge variant="parent">parent</Badge> : null}
                       {isChild ? <Badge variant="child">child</Badge> : null}

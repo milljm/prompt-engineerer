@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { Menu, Square, Swords, X } from "lucide-react";
 import { Toaster, toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { probeConnection } from "@/lib/connect";
 import { runEngine, type EngineEvent } from "@/lib/engine";
+import { SIDEBAR_MAX, SIDEBAR_MIN, clampSidebarWidth, suggestSidebarWidth } from "@/lib/sidebar";
 import { useEngineStore } from "@/lib/store";
 import { PromptPanel } from "./prompt-panel";
 import { RunPanel } from "./run-panel";
@@ -146,9 +147,7 @@ export function AppShell() {
   return (
     <TooltipProvider>
       <div className="relative flex h-dvh overflow-hidden bg-background paper text-foreground">
-        <aside className="hidden w-[min(20rem,32vw)] shrink-0 border-r border-border md:block">
-          <Sidebar />
-        </aside>
+        <DesktopSidebar />
 
         {navOpen ? (
           <div className="fixed inset-0 z-40 md:hidden">
@@ -158,19 +157,7 @@ export function AppShell() {
               aria-label="Close settings"
               onClick={() => setNavOpen(false)}
             />
-            <div className="relative h-full w-[min(20rem,88vw)] border-r border-border bg-card paper shadow-[var(--shadow-border)]">
-              <div className="absolute right-2 top-2 z-10">
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label="Close"
-                  onClick={() => setNavOpen(false)}
-                >
-                  <X />
-                </Button>
-              </div>
-              <Sidebar onNavigate={() => setNavOpen(false)} />
-            </div>
+            <MobileDrawer onClose={() => setNavOpen(false)} />
           </div>
         ) : null}
 
@@ -197,6 +184,126 @@ export function AppShell() {
       </div>
       <ThemeToaster />
     </TooltipProvider>
+  );
+}
+
+function useSidebarWidth() {
+  const width = useEngineStore((s) => s.settings.sidebarWidth);
+  const auto = useEngineStore((s) => s.settings.sidebarAuto);
+  const apiUrl = useEngineStore((s) => s.settings.apiUrl);
+  const models = useEngineStore((s) => s.connection.models);
+  const setSettings = useEngineStore((s) => s.setSettings);
+
+  useEffect(() => {
+    if (!auto) return;
+    const next = suggestSidebarWidth([apiUrl, ...models.map((m) => m.id)]);
+    if (next !== width) setSettings({ sidebarWidth: next });
+  }, [auto, apiUrl, models, setSettings, width]);
+
+  return { width, setSettings, apiUrl, models };
+}
+
+function DesktopSidebar() {
+  const { width, setSettings, apiUrl, models } = useSidebarWidth();
+  const [dragging, setDragging] = useState(false);
+  const [liveWidth, setLiveWidth] = useState<number | null>(null);
+  const drag = useRef<{ startX: number; startW: number } | null>(null);
+  const liveRef = useRef<number | null>(null);
+  const displayWidth = liveWidth ?? width;
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("is-sidebar-resizing", dragging);
+    return () => document.documentElement.classList.remove("is-sidebar-resizing");
+  }, [dragging]);
+
+  function fit() {
+    setSettings({
+      sidebarWidth: suggestSidebarWidth([apiUrl, ...models.map((m) => m.id)]),
+      sidebarAuto: true,
+    });
+  }
+
+  function onPointerDown(event: PointerEvent<HTMLDivElement>) {
+    event.currentTarget.setPointerCapture(event.pointerId);
+    drag.current = { startX: event.clientX, startW: displayWidth };
+    liveRef.current = displayWidth;
+    setDragging(true);
+  }
+
+  function onPointerMove(event: PointerEvent<HTMLDivElement>) {
+    const session = drag.current;
+    if (!session) return;
+    const next = clampSidebarWidth(session.startW + event.clientX - session.startX);
+    liveRef.current = next;
+    setLiveWidth(next);
+  }
+
+  function onPointerUp(event: PointerEvent<HTMLDivElement>) {
+    const next = liveRef.current;
+    drag.current = null;
+    liveRef.current = null;
+    setDragging(false);
+    setLiveWidth(null);
+    if (next != null && next !== width) {
+      setSettings({ sidebarWidth: next, sidebarAuto: false });
+    }
+    event.currentTarget.releasePointerCapture(event.pointerId);
+  }
+
+  function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      setSettings({ sidebarWidth: clampSidebarWidth(width - 16), sidebarAuto: false });
+    } else if (event.key === "ArrowRight") {
+      event.preventDefault();
+      setSettings({ sidebarWidth: clampSidebarWidth(width + 16), sidebarAuto: false });
+    } else if (event.key === "Home" || event.key === "Enter") {
+      event.preventDefault();
+      fit();
+    }
+  }
+
+  return (
+    <aside
+      className="relative hidden shrink-0 border-r border-border md:block"
+      style={{ width: displayWidth }}
+    >
+      <Sidebar />
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize sidebar"
+        aria-valuemin={SIDEBAR_MIN}
+        aria-valuemax={SIDEBAR_MAX}
+        aria-valuenow={displayWidth}
+        tabIndex={0}
+        className="sidebar-resizer"
+        data-active={dragging ? "true" : "false"}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+        onDoubleClick={fit}
+        onKeyDown={onKeyDown}
+      />
+    </aside>
+  );
+}
+
+function MobileDrawer({ onClose }: { onClose: () => void }) {
+  const { width } = useSidebarWidth();
+  return (
+    <div
+      className="relative h-full max-w-[92vw] border-r border-border bg-card paper shadow-[var(--shadow-border)]"
+      style={{ width }}
+    >
+      <div className="absolute right-2 top-2 z-10">
+        <Button variant="ghost" size="icon-sm" aria-label="Close" onClick={onClose}>
+          <X />
+        </Button>
+      </div>
+      <Sidebar onNavigate={onClose} />
+    </div>
   );
 }
 

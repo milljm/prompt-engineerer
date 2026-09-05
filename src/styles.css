@@ -206,6 +206,39 @@ html[data-theme="light"] {
     background-color: var(--color-muted-foreground);
     opacity: 0.45;
   }
+
+  .sidebar-resizer {
+    position: absolute;
+    top: 0;
+    right: -3px;
+    z-index: 2;
+    width: 10px;
+    height: 100%;
+    cursor: col-resize;
+    touch-action: none;
+  }
+
+  .sidebar-resizer::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 4px;
+    width: 2px;
+    border-radius: 1px;
+    background-color: transparent;
+    transition: background-color var(--motion-quick) var(--ease-smooth-out);
+  }
+
+  .sidebar-resizer:hover::after,
+  .sidebar-resizer:focus-visible::after,
+  .sidebar-resizer[data-active="true"]::after {
+    background-color: var(--pe-hot);
+  }
+
+  .sidebar-resizer:focus-visible {
+    outline: none;
+  }
 }
 
 @keyframes pe-shimmer {
@@ -225,6 +258,12 @@ html[data-theme="light"] {
   50% {
     box-shadow: 0 0 10px 3px color-mix(in oklab, var(--pe-ok) 80%, transparent);
   }
+}
+
+html.is-sidebar-resizing,
+html.is-sidebar-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
 }
 
 @media (prefers-reduced-motion: reduce) {
