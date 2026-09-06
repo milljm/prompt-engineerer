@@ -21,6 +21,12 @@ export type LiveEvent =
   | { type: "child-start" }
   | { type: "child-delta"; text: string };
 
+function cleanScenarioName(name: string): string {
+  const trimmed = name.trim();
+  const stripped = trimmed.replace(/^scenario\s*\d+\s*[:.\-\u2013\u2014]\s*/i, "").trim();
+  return stripped || trimmed || "Scenario";
+}
+
 /**
  * Banner when a new scenario starts (so turn 1 after turn N is not a reset).
  *
@@ -29,7 +35,7 @@ export type LiveEvent =
  * @param of - Total scenarios this Child pass (judgement after the last).
  */
 export function scenarioLabel(name: string, index: number, of: number): string {
-  const n = name.trim() || "Scenario";
+  const n = cleanScenarioName(name);
   if (of <= 1) return `Scenario · ${n}`;
   const rest = of - index;
   const tail =

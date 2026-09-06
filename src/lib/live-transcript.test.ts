@@ -22,6 +22,10 @@ describe("scenarioLabel", () => {
     assert.match(scenarioLabel("Pressure", 1, 2), /Scenario 1 of 2 · Pressure · 1 more before judgement/);
     assert.match(scenarioLabel("Pressure", 2, 2), /last one, then judgement/);
   });
+
+  it("strips a redundant Scenario N prefix from the name", () => {
+    assert.match(scenarioLabel("Scenario 3: A Test of Trust", 3, 3), /^Scenario 3 of 3 · A Test of Trust/);
+  });
 });
 
 describe("applyLiveEvent", () => {
