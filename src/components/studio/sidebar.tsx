@@ -8,7 +8,7 @@ import { Slider } from "@/components/ui/slider";
 import { probeConnection } from "@/lib/connect";
 import { clampChildMaxTokens } from "@/lib/child-cap";
 import { useEngineStore } from "@/lib/store";
-import { TURNS_MAX, TURNS_MIN } from "@/lib/types";
+import { ITERATIONS_MAX, ITERATIONS_MIN, TURNS_MAX, TURNS_MIN } from "@/lib/types";
 import { cn, shortModel } from "@/lib/utils";
 import { ThemeToggle } from "./theme-toggle";
 
@@ -218,8 +218,8 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
             <SliderRow
               label="Max iterations"
               value={settings.maxIterations}
-              min={1}
-              max={12}
+              min={ITERATIONS_MIN}
+              max={ITERATIONS_MAX}
               step={1}
               display={`${settings.maxIterations}`}
               disabled={running}
