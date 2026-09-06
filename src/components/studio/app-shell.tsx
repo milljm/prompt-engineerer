@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
-import { Menu, Square, Swords, X } from "lucide-react";
+import { Menu, X } from "lucide-react";
 import { Toaster, toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -8,7 +8,7 @@ import { runEngine, type EngineEvent } from "@/lib/engine";
 import { SIDEBAR_MAX, SIDEBAR_MIN, clampSidebarWidth, suggestSidebarWidth } from "@/lib/sidebar";
 import { useEngineStore } from "@/lib/store";
 import { PromptPanel } from "./prompt-panel";
-import { RunPanel } from "./run-panel";
+import { LivePane, RunToolbar, StatsBar } from "./run-panel";
 import { Sidebar } from "./sidebar";
 
 export function AppShell() {
@@ -154,7 +154,7 @@ export function AppShell() {
         <DesktopSidebar />
 
         {navOpen ? (
-          <div className="fixed inset-0 z-40 md:hidden">
+          <div className="fixed inset-0 z-40 lg:hidden">
             <button
               type="button"
               className="absolute inset-0 bg-background/70"
@@ -166,7 +166,7 @@ export function AppShell() {
         ) : null}
 
         <div className="flex min-w-0 flex-1 flex-col">
-          <div className="flex items-center gap-2 border-b border-border px-2 py-1 md:hidden">
+          <div className="flex items-center gap-2 border-b border-border px-2 py-1 lg:hidden">
             <Button
               variant="ghost"
               size="icon"
@@ -176,13 +176,14 @@ export function AppShell() {
               <Menu />
             </Button>
             <span className="font-display text-lg italic">Engineerer</span>
-            <div className="ml-auto flex items-center gap-1">
-              <MobileRun onStart={() => void onStart()} onStop={onStop} />
-            </div>
           </div>
-          <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-            <PromptPanel />
-            <RunPanel onStart={() => void onStart()} onStop={onStop} />
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+              <RunToolbar onStart={() => void onStart()} onStop={onStop} />
+              <StatsBar />
+              <PromptPanel />
+            </div>
+            <LivePane />
           </div>
         </div>
       </div>
@@ -217,7 +218,15 @@ function DesktopSidebar() {
 
   useEffect(() => {
     document.documentElement.classList.toggle("is-sidebar-resizing", dragging);
-    return () => document.documentElement.classList.remove("is-sidebar-resizing");
+    if (!dragging) return;
+    const block = (event: Event) => event.preventDefault();
+    document.addEventListener("selectstart", block);
+    document.addEventListener("dragstart", block);
+    return () => {
+      document.documentElement.classList.remove("is-sidebar-resizing");
+      document.removeEventListener("selectstart", block);
+      document.removeEventListener("dragstart", block);
+    };
   }, [dragging]);
 
   function fit() {
@@ -228,9 +237,12 @@ function DesktopSidebar() {
   }
 
   function onPointerDown(event: PointerEvent<HTMLDivElement>) {
+    event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
     drag.current = { startX: event.clientX, startW: displayWidth };
     liveRef.current = displayWidth;
+    document.documentElement.classList.add("is-sidebar-resizing");
+    window.getSelection()?.removeAllRanges();
     setDragging(true);
   }
 
@@ -269,7 +281,7 @@ function DesktopSidebar() {
 
   return (
     <aside
-      className="relative hidden shrink-0 border-r border-border md:block"
+      className="relative hidden shrink-0 border-r border-border lg:block"
       style={{ width: displayWidth }}
     >
       <Sidebar />
@@ -308,24 +320,6 @@ function MobileDrawer({ onClose }: { onClose: () => void }) {
       </div>
       <Sidebar onNavigate={onClose} />
     </div>
-  );
-}
-
-function MobileRun({ onStart, onStop }: { onStart: () => void; onStop: () => void }) {
-  const status = useEngineStore((s) => s.status);
-  if (status === "running" || status === "stopping") {
-    return (
-      <Button type="button" variant="destructive" size="sm" onClick={onStop}>
-        <Square className="size-3 fill-current" />
-        Stop
-      </Button>
-    );
-  }
-  return (
-    <Button type="button" size="sm" onClick={onStart}>
-      <Swords className="size-3.5" />
-      Engineer
-    </Button>
   );
 }
 

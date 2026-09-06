@@ -59,7 +59,7 @@ export function PromptPanel() {
   }
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+    <div className="flex min-h-[32rem] min-w-0 flex-1 flex-col lg:min-h-0">
       <header className="border-b border-border px-4 py-3 md:px-5">
         <div className="flex items-center gap-2">
           <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
@@ -77,13 +77,24 @@ export function PromptPanel() {
             Parent prompts
           </Button>
         </div>
-        <Textarea
-          value={goal}
-          disabled={running}
-          onChange={(e) => setGoal(e.target.value)}
-          aria-label="Desired behavior"
-          className="mt-2 min-h-28 bg-card"
-        />
+        <div className="relative mt-2">
+          <Textarea
+            value={goal}
+            disabled={running}
+            onChange={(e) => setGoal(e.target.value)}
+            aria-label="Desired behavior"
+            className={cn("min-h-28 bg-card", !goal.trim() && "caret-foreground text-transparent")}
+          />
+          {!goal.trim() ? (
+            <div className="pointer-events-none absolute inset-0 overflow-hidden px-3 py-3">
+              <p className="font-display text-lg italic leading-tight text-foreground">Ready to forge</p>
+              <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                Describe the behavior you want. Parent drafts a system prompt, throws scenarios at
+                Child — including extra turns — then scores the result and iterates.
+              </p>
+            </div>
+          ) : null}
+        </div>
       </header>
 
       <div className="flex items-center gap-2 border-b border-border px-4 py-2 md:px-5">
@@ -313,7 +324,7 @@ function ParentPromptsPane({ onBack, running }: { onBack: () => void; running: b
   const dirty = drafts[tab] !== saved[tab];
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+    <div className="flex min-h-[32rem] min-w-0 flex-1 flex-col lg:min-h-0">
       <header className="flex items-center gap-2 border-b border-border px-4 py-3 md:px-5">
         <Button type="button" variant="ghost" size="sm" onClick={onBack}>
           <ArrowLeft className="size-3.5" />
