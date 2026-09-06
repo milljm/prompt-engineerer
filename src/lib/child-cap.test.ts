@@ -10,6 +10,7 @@ import {
   overTokenCap,
   stripKillStamp,
   wasKilled,
+  wireMaxTokens,
 } from "./child-cap.ts";
 
 describe("clampChildMaxTokens", () => {
@@ -49,11 +50,20 @@ describe("stripKillStamp", () => {
 });
 
 describe("completionUsed", () => {
-  it("ignores a server total that dwarfs the visible reply", () => {
-    const short = "I push open the heavy oak door.";
+  it("counts visible text only, never reasoning/session usage", () => {
+    const short = "I stay where I am. What happens next?";
     const fromText = estimateTokens(short);
     assert.equal(completionUsed(short, { completion: 200 }), fromText);
     assert.equal(overTokenCap(short, { completion: 200 }, 200), false);
+    assert.equal(overTokenCap(short, { completion: 49 }, 200), false);
     assert.equal(overTokenCap("a".repeat(900), undefined, 200), true);
+  });
+});
+
+describe("wireMaxTokens", () => {
+  it("adds reasoning headroom above the visible cap", () => {
+    assert.ok(wireMaxTokens(200) > 200);
+    assert.ok(wireMaxTokens(200) >= 200 + 1536);
+    assert.ok(wireMaxTokens(2000) <= 8000);
   });
 });
