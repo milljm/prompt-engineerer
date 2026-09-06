@@ -59,7 +59,7 @@ export function PromptPanel() {
   }
 
   return (
-    <div className="flex min-h-[32rem] min-w-0 flex-1 flex-col lg:min-h-0">
+    <div className="flex min-w-0 shrink-0 flex-col overflow-hidden xl:min-h-0 xl:flex-1">
       <header className="border-b border-border px-4 py-3 md:px-5">
         <div className="flex items-center gap-2">
           <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
@@ -97,7 +97,7 @@ export function PromptPanel() {
         </div>
       </header>
 
-      <div className="flex items-center gap-2 border-b border-border px-4 py-2 md:px-5">
+      <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2 md:px-5">
         <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
           System prompt
         </p>
@@ -111,7 +111,7 @@ export function PromptPanel() {
         ) : viewed ? (
           <Badge variant="outline">unscored</Badge>
         ) : null}
-        <div className="ml-auto flex items-center gap-1">
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-1">
           <Button
             type="button"
             variant="ghost"
@@ -324,7 +324,7 @@ function ParentPromptsPane({ onBack, running }: { onBack: () => void; running: b
   const dirty = drafts[tab] !== saved[tab];
 
   return (
-    <div className="flex min-h-[32rem] min-w-0 flex-1 flex-col lg:min-h-0">
+    <div className="flex min-w-0 shrink-0 flex-col overflow-hidden xl:min-h-0 xl:flex-1">
       <header className="flex items-center gap-2 border-b border-border px-4 py-3 md:px-5">
         <Button type="button" variant="ghost" size="sm" onClick={onBack}>
           <ArrowLeft className="size-3.5" />
@@ -354,7 +354,7 @@ function ParentPromptsPane({ onBack, running }: { onBack: () => void; running: b
       <div className="flex items-center gap-2 border-b border-border px-4 py-2 md:px-5">
         <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">{meta.label}</p>
         {dirty ? <Badge variant="outline">unsaved</Badge> : null}
-        <div className="ml-auto flex items-center gap-1">
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-1">
           <Button
             type="button"
             variant="ghost"

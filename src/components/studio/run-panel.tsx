@@ -106,13 +106,13 @@ export function LivePane() {
   const showEmpty = !showLive && !iterations.length && !running;
 
   return (
-    <div className="flex min-h-[28rem] min-w-0 flex-1 flex-col border-t border-border lg:min-h-0 lg:border-l lg:border-t-0">
+    <div className="flex min-h-[22rem] min-w-0 shrink-0 flex-col border-t border-border xl:min-h-0 xl:flex-1 xl:border-l xl:border-t-0">
       {showEmpty ? (
         <EmptyHint />
       ) : (
         <div className="flex min-h-0 flex-1 flex-col">
           {showLive ? (
-            <div className="flex min-h-72 min-w-0 flex-1 flex-col p-4 lg:min-h-0 md:px-5">
+            <div className="flex min-h-72 min-w-0 flex-1 flex-col p-4 xl:min-h-0 md:px-5">
               <LiveTranscript lines={liveLines} />
             </div>
           ) : null}

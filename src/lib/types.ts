@@ -108,6 +108,7 @@ export type Settings = {
   childMaxTokens: number;
   sidebarWidth: number;
   sidebarAuto: boolean;
+  sidebarCollapsed: boolean;
 };
 
 /** Pre-v2 persisted settings that still used the Edge/xAI backend picker. */
@@ -134,6 +135,7 @@ export const DEFAULT_SETTINGS: Settings = {
   childMaxTokens: CHILD_TOKENS_DEFAULT,
   sidebarWidth: SIDEBAR_DEFAULT,
   sidebarAuto: true,
+  sidebarCollapsed: false,
 };
 
 export const DEFAULT_GOAL =
@@ -158,5 +160,6 @@ export function migrateSettings(raw: LegacySettings | undefined): Settings {
     childMaxTokens: clampChildMaxTokens(src.childMaxTokens ?? DEFAULT_SETTINGS.childMaxTokens),
     sidebarWidth: clampSidebarWidth(src.sidebarWidth ?? DEFAULT_SETTINGS.sidebarWidth),
     sidebarAuto: src.sidebarAuto !== false,
+    sidebarCollapsed: src.sidebarCollapsed === true,
   };
 }

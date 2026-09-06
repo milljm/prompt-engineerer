@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Eye, EyeOff, RefreshCw } from "lucide-react";
+import { Eye, EyeOff, PanelLeftClose, RefreshCw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,7 +32,21 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
           <h1 className="font-display text-2xl italic leading-tight text-foreground">Engineerer</h1>
           <p className="mt-1 text-xs text-muted-foreground">Parent forges. Child is tested.</p>
         </div>
-        <ThemeToggle />
+        <div className="flex shrink-0 items-center gap-1">
+          {!onNavigate ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Collapse settings"
+              title="Collapse settings"
+              onClick={() => setSettings({ sidebarCollapsed: true })}
+            >
+              <PanelLeftClose className="size-4" />
+            </Button>
+          ) : null}
+          <ThemeToggle />
+        </div>
       </div>
 
       <div className="px-4 pb-3">

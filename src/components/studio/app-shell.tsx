@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
-import { Menu, X } from "lucide-react";
+import { Menu, PanelLeft, X } from "lucide-react";
 import { Toaster, toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { probeConnection } from "@/lib/connect";
 import { runEngine, type EngineEvent } from "@/lib/engine";
-import { SIDEBAR_MAX, SIDEBAR_MIN, clampSidebarWidth, suggestSidebarWidth } from "@/lib/sidebar";
+import { SIDEBAR_MAX, SIDEBAR_MIN, SIDEBAR_RAIL, clampSidebarWidth, shouldCollapseSidebar, suggestSidebarWidth } from "@/lib/sidebar";
 import { useEngineStore } from "@/lib/store";
 import { PromptPanel } from "./prompt-panel";
 import { LivePane, RunToolbar, StatsBar } from "./run-panel";
@@ -178,12 +178,12 @@ export function AppShell() {
             <span className="font-display text-lg italic">Engineerer</span>
           </div>
           {/*
-            3-pane  lg+     (≥1024): sidebar | goal/prompt | bout
-            2-pane  md–lg   (768–1023): sidebar | stacked studio
-            1-pane  <md     (<768): hamburger + stacked studio
+            3-pane  xl+      (≥1280): sidebar | goal/prompt | bout
+            2-pane  md–xl    (768–1279): sidebar | stacked studio
+            1-pane  <md      (<768): hamburger + stacked studio
           */}
-          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto xl:flex-row xl:overflow-hidden">
+            <div className="flex min-w-0 shrink-0 flex-col xl:min-h-0 xl:flex-1">
               <RunToolbar onStart={() => void onStart()} onStop={onStop} />
               <StatsBar />
               <PromptPanel />
@@ -215,11 +215,13 @@ function useSidebarWidth() {
 
 function DesktopSidebar() {
   const { width, setSettings, apiUrl, models } = useSidebarWidth();
+  const collapsed = useEngineStore((s) => s.settings.sidebarCollapsed);
   const [dragging, setDragging] = useState(false);
   const [liveWidth, setLiveWidth] = useState<number | null>(null);
   const drag = useRef<{ startX: number; startW: number } | null>(null);
   const liveRef = useRef<number | null>(null);
-  const displayWidth = liveWidth ?? width;
+  const collapseRef = useRef(false);
+  const displayWidth = collapsed ? SIDEBAR_RAIL : (liveWidth ?? width);
 
   useEffect(() => {
     document.documentElement.classList.toggle("is-sidebar-resizing", dragging);
@@ -234,18 +236,24 @@ function DesktopSidebar() {
     };
   }, [dragging]);
 
+  function expand() {
+    setSettings({ sidebarCollapsed: false });
+  }
+
   function fit() {
     setSettings({
       sidebarWidth: suggestSidebarWidth([apiUrl, ...models.map((m) => m.id)]),
       sidebarAuto: true,
+      sidebarCollapsed: false,
     });
   }
 
   function onPointerDown(event: PointerEvent<HTMLDivElement>) {
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
-    drag.current = { startX: event.clientX, startW: displayWidth };
-    liveRef.current = displayWidth;
+    drag.current = { startX: event.clientX, startW: collapsed ? SIDEBAR_RAIL : displayWidth };
+    liveRef.current = collapsed ? SIDEBAR_RAIL : displayWidth;
+    collapseRef.current = collapsed;
     document.documentElement.classList.add("is-sidebar-resizing");
     window.getSelection()?.removeAllRanges();
     setDragging(true);
@@ -254,19 +262,29 @@ function DesktopSidebar() {
   function onPointerMove(event: PointerEvent<HTMLDivElement>) {
     const session = drag.current;
     if (!session) return;
-    const next = clampSidebarWidth(session.startW + event.clientX - session.startX);
+    const raw = session.startW + event.clientX - session.startX;
+    collapseRef.current = shouldCollapseSidebar(raw);
+    const next = collapseRef.current ? SIDEBAR_RAIL : clampSidebarWidth(raw);
     liveRef.current = next;
     setLiveWidth(next);
   }
 
   function onPointerUp(event: PointerEvent<HTMLDivElement>) {
     const next = liveRef.current;
+    const snapShut = collapseRef.current;
     drag.current = null;
     liveRef.current = null;
+    collapseRef.current = false;
     setDragging(false);
     setLiveWidth(null);
-    if (next != null && next !== width) {
-      setSettings({ sidebarWidth: next, sidebarAuto: false });
+    if (snapShut) {
+      setSettings({ sidebarCollapsed: true, sidebarAuto: false });
+    } else if (next != null) {
+      setSettings({
+        sidebarCollapsed: false,
+        sidebarAuto: false,
+        sidebarWidth: clampSidebarWidth(next),
+      });
     }
     event.currentTarget.releasePointerCapture(event.pointerId);
   }
@@ -274,19 +292,51 @@ function DesktopSidebar() {
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.key === "ArrowLeft") {
       event.preventDefault();
-      setSettings({ sidebarWidth: clampSidebarWidth(width - 16), sidebarAuto: false });
+      if (width <= SIDEBAR_MIN) setSettings({ sidebarCollapsed: true, sidebarAuto: false });
+      else setSettings({ sidebarWidth: clampSidebarWidth(width - 16), sidebarAuto: false });
     } else if (event.key === "ArrowRight") {
       event.preventDefault();
-      setSettings({ sidebarWidth: clampSidebarWidth(width + 16), sidebarAuto: false });
+      if (collapsed) expand();
+      else setSettings({ sidebarWidth: clampSidebarWidth(width + 16), sidebarAuto: false });
     } else if (event.key === "Home" || event.key === "Enter") {
       event.preventDefault();
       fit();
     }
   }
 
+  if (collapsed && !dragging) {
+    return (
+      <aside className="relative hidden w-11 shrink-0 flex-col items-center border-r border-border md:flex">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          className="mt-3"
+          aria-label="Expand settings"
+          onClick={expand}
+        >
+          <PanelLeft className="size-4" />
+        </Button>
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Expand sidebar"
+          tabIndex={0}
+          className="sidebar-resizer"
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerCancel={onPointerUp}
+          onDoubleClick={fit}
+          onKeyDown={onKeyDown}
+        />
+      </aside>
+    );
+  }
+
   return (
     <aside
-      className="relative hidden shrink-0 border-r border-border md:block"
+      className="relative hidden shrink-0 overflow-hidden border-r border-border md:block"
       style={{ width: displayWidth }}
     >
       <Sidebar />
