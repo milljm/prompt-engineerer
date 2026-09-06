@@ -25,13 +25,14 @@ Ollama / vLLM / LM Studio, or a hosted API (OpenAI, xAI, Groq, OpenRouter, …).
    one per critical rule.
 2. For each rule, Child answers turn 1. Parent reads that reply and writes
    turn 2, still pressing *that* rule. Repeat up to **Turns per rule** (1–20).
-3. After every scenario, Parent gets the full Child transcripts and scores
-   1–10. Miss the target → revise or revert. Hit it → stop.
-4. If Parent adds a new cage rule, the next loop tests it. Old rules keep
-   their scenarios. **Max iterations** is the runaway brake, not the turn slider.
-5. Revisions stay on a timeline with scores and diffs. Restore or abandon any
-   rev. Parent sees every prior prompt and score so it can tell improve vs
-   degrade.
+3. After every scenario, Parent fills a **rule ledger** (`agency: pass`,
+   `runaway: fail`, …). Passed rules are not retested. Failures get the next
+   loop. An `[ENGINE KILL]` (Child hit the token cap) is a hard halt: other
+   scenes are dropped and the only job is to stop the runaway.
+4. Revisions stay on a timeline with scores and diffs. **Copy** the viewed
+   prompt or **Download** every rev as Markdown. Restore or abandon any rev.
+5. **Parent prompts** (next to “What you want”) opens the system prompts Parent
+   itself uses — Draft & judge, Live follow-up — with Save / Restore original.
 
 **Stop** aborts the loop. Local servers are asked to cancel in-flight
 generation.

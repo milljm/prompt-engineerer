@@ -6,6 +6,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { applyLiveEvent, type LiveEvent, type LiveLine } from "./live-transcript.ts";
+import { defaultParentPrompts, type ParentPromptKey } from "./parent-protocol";
 import {
   DEFAULT_GOAL,
   DEFAULT_SETTINGS,
@@ -33,6 +34,7 @@ type EngineStore = {
   error: string | null;
   connection: ConnectionState;
   viewingRev: number | null;
+  parentPrompts: Record<ParentPromptKey, string>;
   setSettings: (patch: Partial<Settings>) => void;
   setGoal: (goal: string) => void;
   setSeedPrompt: (prompt: string) => void;
@@ -54,6 +56,8 @@ type EngineStore = {
   restoreRev: (rev: number) => number | null;
   abandonCurrent: () => number | null;
   currentPrompt: () => string;
+  setParentPrompt: (key: ParentPromptKey, text: string) => void;
+  restoreParentPrompt: (key: ParentPromptKey) => void;
 };
 
 const emptyConnection: ConnectionState = {
@@ -80,6 +84,7 @@ export const useEngineStore = create<EngineStore>()(
       error: null,
       connection: emptyConnection,
       viewingRev: null,
+      parentPrompts: defaultParentPrompts(),
       setSettings: (patch) =>
         set((s) => ({ settings: { ...s.settings, ...patch } })),
       setGoal: (goal) => set({ goal }),
@@ -163,10 +168,14 @@ export const useEngineStore = create<EngineStore>()(
         const cur = versions.find((v) => v.rev === currentRev);
         return cur?.prompt ?? seedPrompt;
       },
+      setParentPrompt: (key, text) =>
+        set((s) => ({ parentPrompts: { ...s.parentPrompts, [key]: text } })),
+      restoreParentPrompt: (key) =>
+        set((s) => ({ parentPrompts: { ...s.parentPrompts, [key]: defaultParentPrompts()[key] } })),
     }),
     {
       name: "pe-engine",
-      version: 3,
+      version: 4,
       partialize: (s) => ({
         settings: s.settings,
         goal: s.goal,
@@ -174,10 +183,22 @@ export const useEngineStore = create<EngineStore>()(
         versions: s.versions,
         currentRev: s.currentRev,
         iterations: s.iterations.slice(-24),
+        parentPrompts: s.parentPrompts,
       }),
       migrate: (persisted) => {
-        const p = (persisted ?? {}) as { settings?: LegacySettings };
-        return { ...p, settings: migrateSettings(p.settings) };
+        const p = (persisted ?? {}) as {
+          settings?: LegacySettings;
+          parentPrompts?: Partial<Record<ParentPromptKey, string>>;
+        };
+        const factory = defaultParentPrompts();
+        return {
+          ...p,
+          settings: migrateSettings(p.settings),
+          parentPrompts: {
+            draft: p.parentPrompts?.draft || factory.draft,
+            followup: p.parentPrompts?.followup || factory.followup,
+          },
+        };
       },
     },
   ),

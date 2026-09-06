@@ -298,6 +298,15 @@ function IterationCard({ record }: { record: IterationRecord }) {
           {record.rationale}
         </p>
       ) : null}
+      {record.ledger?.length ? (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {record.ledger.map((row) => (
+            <Badge key={row.name} variant={row.verdict === "pass" ? "ok" : "child"}>
+              {row.name}: {row.verdict}
+            </Badge>
+          ))}
+        </div>
+      ) : null}
       <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
         <span className="font-mono tabular-nums">parent {formatMs(record.phaseMs.parent)}</span>
         <span className="font-mono tabular-nums">child {formatMs(record.phaseMs.child)}</span>

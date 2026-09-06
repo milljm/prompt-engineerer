@@ -6,13 +6,11 @@
  * until the target score, the iteration budget, or Stop.
  */
 
-import { childKillStamp, estimateTokens } from "./child-cap";
+import { childKillStamp, estimateTokens, wasKilled } from "./child-cap";
 import { extractJsonObject } from "./json";
 import { chat, stopLocal } from "./inference";
 import { isBrowserDirectUrl } from "./openai-url";
 import {
-  PARENT_FOLLOWUP_SYSTEM,
-  PARENT_SYSTEM,
   fallbackScenarios,
   historyBrief,
   inCharacterFollowUp,
@@ -20,11 +18,18 @@ import {
   parseParentReply,
   type ParentReply,
 } from "./parent-protocol";
+import {
+  focusScenarios,
+  killFocusBlock,
+  mergeLedger,
+  transcriptsKilled,
+} from "./rule-ledger";
 import { mergeScenarios } from "./scenarios";
 import type {
   ChatMessage,
   IterationRecord,
   PromptVersion,
+  RuleRecord,
   ScenarioResult,
   ScenarioSpec,
   Settings,
@@ -46,6 +51,8 @@ export type EngineInput = {
   versions: PromptVersion[];
   currentRev: number | null;
   settings: Settings;
+  parentSystem: string;
+  parentFollowupSystem: string;
   signal: AbortSignal;
   onEvent: (event: EngineEvent) => void;
 };
@@ -63,7 +70,7 @@ async function parentCall(
   const run = async (nudge?: string) => {
     onDelta("");
     const messages: ChatMessage[] = [
-      { role: "system", content: PARENT_SYSTEM },
+      { role: "system", content: input.parentSystem },
       { role: "user", content: nudge ? `${user}\n\n${nudge}` : user },
     ];
     const result = await chat({
@@ -107,7 +114,7 @@ async function parentFollowUp(
       apiKey: settings.apiKey,
       model: settings.parentModel,
       messages: [
-        { role: "system", content: PARENT_FOLLOWUP_SYSTEM },
+        { role: "system", content: input.parentFollowupSystem },
         { role: "user", content: user },
       ],
       temperature: 0.4,
@@ -216,8 +223,10 @@ async function runScenarios(
       }
       history.push({ role: "assistant", content: assistant });
       turns.push({ user: userText, assistant, ms: performance.now() - t0 });
+      if (wasKilled(assistant)) break;
     }
     out.push({ name: spec.name, turns });
+    if (turns.some((t) => wasKilled(t.assistant))) break;
   }
   return out;
 }
@@ -245,6 +254,7 @@ function emptyJudge(prev: ScenarioSpec[], reason: string): ParentReply {
     score: null,
     pass: false,
     rationale: reason,
+    ledger: [],
   };
 }
 
@@ -255,6 +265,7 @@ export async function runEngine(input: EngineInput) {
   let nextRev = (versions.at(-1)?.rev ?? 0) + 1;
   let pendingScenarios: ScenarioSpec[] | null = null;
   let lastPlanned: ScenarioSpec[] = [];
+  let ledger: RuleRecord[] = [];
 
   const emitVersion = (version: PromptVersion) => {
     versions = [...versions, version];
@@ -306,15 +317,15 @@ export async function runEngine(input: EngineInput) {
           createdAt: Date.now(),
           parentRev: null,
         });
-        pendingScenarios = mergeScenarios(reply.scenarios, lastPlanned);
+        pendingScenarios = focusScenarios(mergeScenarios(reply.scenarios, lastPlanned), ledger, false);
       } else if (!pendingScenarios?.length) {
         const cur = currentOf();
         reply = await parentCall(
           input,
-          `GOAL:\n${goal}\n\nCURRENT SYSTEM PROMPT (rev ${cur?.rev}):\n${cur?.prompt ?? ""}\n\nREVISION LOG (full prompts + scores, oldest → newest):\n${historyBrief(versions)}\n\nDesign one scenario per critical rule. Each rule gets ${settings.turns} turns. If you added a rule, add a scenario for it. Keep prior rule tests. action should be "draft". Keep system_prompt unless it is clearly broken or scores have stalled. Only the FIRST user turn per scenario is required.`,
+          `GOAL:\n${goal}\n\nCURRENT SYSTEM PROMPT (rev ${cur?.rev}):\n${cur?.prompt ?? ""}\n\nREVISION LOG (full prompts + scores, oldest → newest):\n${historyBrief(versions)}\n\n${killFocusBlock(false, ledger)}\n\nDesign scenarios only for FAIL or new rules. Each of those gets ${settings.turns} turns. action should be "draft". Keep system_prompt unless it is clearly broken or scores have stalled. Only the FIRST user turn per scenario is required.`,
           (text) => onEvent({ type: "parent-delta", text }),
         );
-        pendingScenarios = mergeScenarios(reply.scenarios, lastPlanned);
+        pendingScenarios = focusScenarios(mergeScenarios(reply.scenarios, lastPlanned), ledger, false);
         if (reply.systemPrompt.trim() && reply.systemPrompt.trim() !== cur?.prompt) {
           emitVersion({
             rev: nextRev,
@@ -361,15 +372,17 @@ export async function runEngine(input: EngineInput) {
           rationale: "Parent judging…",
           action: "judging",
           scenarios: results,
+          ledger,
           phaseMs: { parent: parentMs, child: childMs },
         },
       });
       const tJudge = performance.now();
+      const killed = transcriptsKilled(results);
       let judged: ParentReply;
       try {
         judged = await parentCall(
           input,
-          `GOAL:\n${goal}\n\nCURRENT SYSTEM PROMPT (rev ${currentRev}):\n${promptText}\n\nREVISION LOG (full prompts + scores, oldest → newest). Use it to see whether you are improving or degrading:\n${historyBrief(versions)}\n\nCHILD TRANSCRIPTS:\n${transcriptBlock(results)}\n\nIf any Child turn contains [ENGINE KILL], that is a hard failure: Child ran away past the completion cap. Do not pass. Add or tighten a rule that stops the runaway.\n\nScore 1–10. If score >= ${settings.targetScore}, action="pass". If this score is below the best in the log, prefer action="revert" to that rev or a real rewrite — not a tiny edit of a loser. Otherwise revise the FULL system prompt. Include one scenario per critical rule (keep old rule tests; add a scenario for any new rule). Only the FIRST user turn per scenario is required.`,
+          `GOAL:\n${goal}\n\nCURRENT SYSTEM PROMPT (rev ${currentRev}):\n${promptText}\n\nREVISION LOG (full prompts + scores, oldest → newest). Use it to see whether you are improving or degrading:\n${historyBrief(versions)}\n\nCHILD TRANSCRIPTS:\n${transcriptBlock(results)}\n\n${killFocusBlock(killed, ledger)}\n\nScore 1–10. If score >= ${settings.targetScore} AND there was no [ENGINE KILL], action="pass". If this score is below the best in the log, prefer action="revert" to that rev or a real rewrite — not a tiny edit of a loser. Otherwise revise the FULL system prompt. Fill rule_ledger. Only schedule scenarios for FAIL or new rules. Only the FIRST user turn per scenario is required.`,
           (text) => onEvent({ type: "parent-delta", text }),
         );
       } catch (err) {
@@ -381,8 +394,20 @@ export async function runEngine(input: EngineInput) {
       }
       parentMs += performance.now() - tJudge;
 
+      ledger = mergeLedger(ledger, judged.ledger);
+      if (killed) {
+        ledger = mergeLedger(ledger, [
+          { name: "Runaway length", verdict: "fail", note: "ENGINE KILL — Child was cut off at the completion cap." },
+        ]);
+        judged = {
+          ...judged,
+          pass: false,
+          score: judged.score == null ? 3 : Math.min(judged.score, 4),
+        };
+      }
+
       const score = judged.score ?? 0;
-      const passed = judged.pass || (judged.score != null && score >= settings.targetScore);
+      const passed = !killed && (judged.pass || (judged.score != null && score >= settings.targetScore));
 
       if (currentRev != null) {
         onEvent({
@@ -418,6 +443,7 @@ export async function runEngine(input: EngineInput) {
         rationale: judged.rationale,
         action: passed ? "pass" : judged.action,
         scenarios: results,
+        ledger,
         phaseMs: { parent: parentMs, child: childMs },
       };
       onEvent({ type: "iteration", record });
@@ -452,7 +478,7 @@ export async function runEngine(input: EngineInput) {
             createdAt: Date.now(),
             parentRev: src.rev,
           });
-          pendingScenarios = mergeScenarios(judged.scenarios, lastPlanned);
+          pendingScenarios = focusScenarios(mergeScenarios(judged.scenarios, lastPlanned), ledger, killed);
           continue;
         }
       }
@@ -469,7 +495,7 @@ export async function runEngine(input: EngineInput) {
           parentRev: currentRev,
         });
       }
-      pendingScenarios = mergeScenarios(judged.scenarios, lastPlanned);
+      pendingScenarios = focusScenarios(mergeScenarios(judged.scenarios, lastPlanned), ledger, killed);
     }
 
     onEvent({ type: "done", reason: "max", message: "Iteration budget exhausted." });

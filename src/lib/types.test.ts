@@ -70,6 +70,7 @@ describe("upsertIteration", () => {
     rationale: "Parent judging…",
     action: "judging" as const,
     scenarios: [],
+    ledger: [],
     phaseMs: { parent: 1, child: 1 },
   };
 

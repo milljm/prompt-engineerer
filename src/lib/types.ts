@@ -44,6 +44,14 @@ export type ScenarioResult = {
   turns: ScenarioTurn[];
 };
 
+export type RuleVerdict = "pass" | "fail";
+
+export type RuleRecord = {
+  name: string;
+  verdict: RuleVerdict;
+  note: string;
+};
+
 export type PromptVersion = {
   rev: number;
   prompt: string;
@@ -64,6 +72,7 @@ export type IterationRecord = {
   rationale: string;
   action: "draft" | "revise" | "revert" | "pass" | "judging";
   scenarios: ScenarioResult[];
+  ledger: RuleRecord[];
   phaseMs: { parent: number; child: number };
 };
 
