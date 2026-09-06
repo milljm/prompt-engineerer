@@ -119,6 +119,13 @@ export type LegacySettings = Partial<Settings> & { edgeUrl?: string; backend?: s
 export const TURNS_MIN = 1;
 export const TURNS_MAX = 20;
 export const SCENARIOS_MAX = 20;
+export const ITERATIONS_MIN = 1;
+export const ITERATIONS_MAX = 100;
+
+export function clampIterations(n: unknown): number {
+  const v = typeof n === "number" && Number.isFinite(n) ? Math.round(n) : 6;
+  return Math.max(ITERATIONS_MIN, Math.min(ITERATIONS_MAX, v));
+}
 
 export function clampTurns(n: unknown): number {
   const v = typeof n === "number" && Number.isFinite(n) ? Math.round(n) : 2;
@@ -160,6 +167,7 @@ export function migrateSettings(raw: LegacySettings | undefined): Settings {
     apiUrl: (src.apiUrl || fromEdge || "").trim(),
     apiKey: src.apiKey ?? "",
     turns: clampTurns(src.turns ?? DEFAULT_SETTINGS.turns),
+    maxIterations: clampIterations(src.maxIterations ?? DEFAULT_SETTINGS.maxIterations),
     childMaxTokens: clampChildMaxTokens(src.childMaxTokens ?? DEFAULT_SETTINGS.childMaxTokens),
     sidebarWidth: clampSidebarWidth(src.sidebarWidth ?? DEFAULT_SETTINGS.sidebarWidth),
     sidebarAuto: src.sidebarAuto !== false,

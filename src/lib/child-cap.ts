@@ -1,4 +1,4 @@
-/** Hard Child completion cap helpers. */
+/** Hard Child completion cap helpers. Visible (non-reasoning) tokens only. */
 
 export const CHILD_TOKENS_MIN = 32;
 export const CHILD_TOKENS_MAX = 8192;
@@ -9,12 +9,36 @@ export const ENGINE_KILL_MARK = "[ENGINE KILL]";
 /**
  * Cheap completion-token estimate (chars / 4). Good enough to cut a runaway.
  *
- * @param text - Generated Child text so far.
+ * @param text - Generated Child *visible* text so far. Reasoning is ignored.
  */
 export function estimateTokens(text: string): number {
   const t = text.trim();
   if (!t) return 0;
   return Math.max(1, Math.ceil(t.length / 4));
+}
+
+/**
+ * Tokens that count toward the Child cap: the visible reply only.
+ * Local servers fold reasoning / prompt / session totals into completion_tokens.
+ * Those numbers are not the cage.
+ */
+export function completionUsed(text: string, _usage?: { completion: number }): number {
+  return estimateTokens(text);
+}
+
+export function overTokenCap(text: string, usage: { completion: number } | undefined, maxTokens?: number): boolean {
+  if (!maxTokens) return false;
+  return completionUsed(text, usage) >= maxTokens;
+}
+
+/**
+ * max_tokens sent to the server. Reasoning models spend the wire budget on
+ * think tokens first, then content. Headroom keeps a short visible reply
+ * from getting finish_reason=length at 40 tokens.
+ */
+export function wireMaxTokens(visibleCap?: number): number {
+  const cap = visibleCap && Number.isFinite(visibleCap) && visibleCap > 0 ? Math.round(visibleCap) : 1200;
+  return Math.min(8000, cap + Math.max(cap * 4, 1536));
 }
 
 /**
@@ -31,8 +55,8 @@ export function clampChildMaxTokens(n: unknown): number {
  * Abrupt notice appended to a killed Child turn. Parent must treat this as
  * a cage failure and add or tighten a rule.
  *
- * @param cap - Configured token cap.
- * @param used - Estimated or reported completion tokens.
+ * @param cap - Configured visible-token cap.
+ * @param used - Visible completion tokens.
  */
 export function childKillStamp(cap: number, used: number): string {
   return (

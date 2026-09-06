@@ -5,9 +5,12 @@ import {
   ENGINE_KILL_MARK,
   childKillStamp,
   clampChildMaxTokens,
+  completionUsed,
   estimateTokens,
+  overTokenCap,
   stripKillStamp,
   wasKilled,
+  wireMaxTokens,
 } from "./child-cap.ts";
 
 describe("clampChildMaxTokens", () => {
@@ -43,5 +46,24 @@ describe("stripKillStamp", () => {
     const stamped = `${body}${childKillStamp(600, 600)}`;
     assert.equal(stripKillStamp(stamped), body);
     assert.equal(stripKillStamp(body), body);
+  });
+});
+
+describe("completionUsed", () => {
+  it("counts visible text only, never reasoning/session usage", () => {
+    const short = "I stay where I am. What happens next?";
+    const fromText = estimateTokens(short);
+    assert.equal(completionUsed(short, { completion: 200 }), fromText);
+    assert.equal(overTokenCap(short, { completion: 200 }, 200), false);
+    assert.equal(overTokenCap(short, { completion: 49 }, 200), false);
+    assert.equal(overTokenCap("a".repeat(900), undefined, 200), true);
+  });
+});
+
+describe("wireMaxTokens", () => {
+  it("adds reasoning headroom above the visible cap", () => {
+    assert.ok(wireMaxTokens(200) > 200);
+    assert.ok(wireMaxTokens(200) >= 200 + 1536);
+    assert.ok(wireMaxTokens(2000) <= 8000);
   });
 });

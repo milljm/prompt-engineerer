@@ -7,6 +7,7 @@ import { isPinnedToBottom, pinToBottom } from "@/lib/scroll";
 import { useEngineStore } from "@/lib/store";
 import type { LiveLine } from "@/lib/live-transcript";
 import type { IterationRecord, ScenarioTurn } from "@/lib/types";
+import { wasKilled } from "@/lib/child-cap";
 import { cn, formatMs } from "@/lib/utils";
 import { Markdown } from "./markdown";
 
@@ -125,8 +126,8 @@ export function LivePane() {
           {iterations.length ? (
             <ScrollArea className={cn("min-h-0", showLive ? "max-h-[42%] shrink-0" : "flex-1")}>
               <div className="space-y-3 px-4 py-4 md:px-5">
-                {[...iterations].reverse().map((it) => (
-                  <IterationCard key={it.id} record={it} />
+                {[...iterations].reverse().map((it, i) => (
+                  <IterationCard key={it.id} record={it} defaultOpen={i === 0 && it.action === "judging"} />
                 ))}
               </div>
             </ScrollArea>
@@ -302,7 +303,7 @@ function ScoreStrip({
   );
 }
 
-function IterationCard({ record }: { record: IterationRecord }) {
+function IterationCard({ record, defaultOpen }: { record: IterationRecord; defaultOpen?: boolean }) {
   const judging = record.action === "judging";
   const hit = (record.score ?? 0) >= 8 && record.action === "pass";
   return (
@@ -338,26 +339,32 @@ function IterationCard({ record }: { record: IterationRecord }) {
       <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
         <span className="font-mono tabular-nums">parent {formatMs(record.phaseMs.parent)}</span>
         <span className="font-mono tabular-nums">child {formatMs(record.phaseMs.child)}</span>
-        {record.scenarios.map((s) => (
-          <span key={s.name}>
-            {s.name} · {s.turns.length} turn{s.turns.length === 1 ? "" : "s"}
-          </span>
-        ))}
       </div>
       {record.scenarios.length ? (
-        <div className="mt-3 max-h-64 overflow-auto rounded-md bg-secondary px-3 py-1">
-          {record.scenarios.map((s) => (
-            <div key={s.name} className="py-1">
-              {record.scenarios.length > 1 ? (
-                <p className="pt-2 text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                  {s.name}
-                </p>
-              ) : null}
-              {s.turns.map((turn, i) => (
-                <TurnDialogue key={`${s.name}-${i}`} turn={turn} index={i + 1} of={s.turns.length} />
-              ))}
-            </div>
-          ))}
+        <div className="mt-3 space-y-1.5">
+          {record.scenarios.map((s) => {
+            const killed = s.turns.some((turn) => wasKilled(turn.assistant));
+            return (
+              <details
+                key={s.name}
+                className="iter-scene rounded-md bg-secondary px-3 py-1"
+                open={defaultOpen || undefined}
+              >
+                <summary className="flex cursor-pointer list-none items-center gap-2 py-1.5 text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                  <span className="min-w-0 flex-1 truncate">{s.name}</span>
+                  <span className="shrink-0 font-mono font-normal normal-case tracking-normal">
+                    {s.turns.length} turn{s.turns.length === 1 ? "" : "s"}
+                  </span>
+                  {killed ? <Badge variant="child">kill</Badge> : null}
+                </summary>
+                <div className="max-h-64 overflow-auto pb-2">
+                  {s.turns.map((turn, i) => (
+                    <TurnDialogue key={`${s.name}-${i}`} turn={turn} index={i + 1} of={s.turns.length} />
+                  ))}
+                </div>
+              </details>
+            );
+          })}
         </div>
       ) : null}
     </article>

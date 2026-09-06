@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { probeConnection } from "@/lib/connect";
 import { runEngine, type EngineEvent } from "@/lib/engine";
+import { stopLocal } from "@/lib/inference";
 import { SIDEBAR_MAX, SIDEBAR_MIN, SIDEBAR_RAIL, clampSidebarWidth, shouldCollapseSidebar, suggestSidebarWidth } from "@/lib/sidebar";
 import { useEngineStore } from "@/lib/store";
 import { PromptPanel } from "./prompt-panel";
@@ -59,6 +60,7 @@ export function AppShell() {
     abortRef.current?.abort();
     const ac = new AbortController();
     abortRef.current = ac;
+    void stopLocal(state.settings.apiUrl, state.settings.childModel);
 
     useEngineStore.setState({
       status: "running",
@@ -79,7 +81,6 @@ export function AppShell() {
       parentFollowupSystem: useEngineStore.getState().parentPrompts.followup,
       getLivePrompt: () => useEngineStore.getState().currentPrompt(),
       ledger: prev?.ledger,
-      priorResults: prev?.scenarios,
       signal: ac.signal,
       onEvent: (event: EngineEvent) => {
         const store = useEngineStore.getState();
@@ -181,11 +182,6 @@ export function AppShell() {
             </Button>
             <span className="font-display text-lg italic">Engineerer</span>
           </div>
-          {/*
-            3-pane  xl+      (≥1280): sidebar | goal/prompt | bout
-            2-pane  md–xl    (768–1279): sidebar | stacked studio
-            1-pane  <md      (<768): hamburger + stacked studio
-          */}
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden xl:flex-row">
             <div className="flex min-h-0 min-w-0 flex-1 flex-col">
               <RunToolbar onStart={() => void onStart()} onStop={onStop} />
