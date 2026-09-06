@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Slider } from "@/components/ui/slider";
 import { probeConnection } from "@/lib/connect";
+import { clampChildMaxTokens } from "@/lib/child-cap";
 import { useEngineStore } from "@/lib/store";
 import { TURNS_MAX, TURNS_MIN } from "@/lib/types";
 import { cn, shortModel } from "@/lib/utils";
@@ -210,6 +211,28 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
               disabled={running}
               onChange={(n) => setSettings({ maxIterations: n })}
             />
+            <div>
+              <div className="flex items-baseline justify-between">
+                <Label>Child token cap</Label>
+                <span className="font-mono text-xs tabular-nums text-foreground">
+                  {settings.childMaxTokens}
+                </span>
+              </div>
+              <Input
+                type="number"
+                min={32}
+                max={8192}
+                step={32}
+                disabled={running}
+                value={settings.childMaxTokens}
+                aria-label="Child completion token cap"
+                onChange={(e) => setSettings({ childMaxTokens: clampChildMaxTokens(Number(e.target.value)) })}
+                className="mt-1 h-9 font-mono text-xs"
+              />
+              <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                Hard stop. Over this, Child is killed and Parent sees [ENGINE KILL].
+              </p>
+            </div>
           </section>
         </div>
       </ScrollArea>
