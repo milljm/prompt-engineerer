@@ -29,7 +29,7 @@ describe("estimateTokens", () => {
 describe("childKillStamp", () => {
   it("is unmistakable and marks the text as killed", () => {
     const stamp = childKillStamp(600, 612);
-    assert.match(stamp, new RegExp(ENGINE_KILL_MARK.replace(/[\[\]]/g, "\\$&")));
+    assert.equal(stamp.includes(ENGINE_KILL_MARK), true);
     assert.match(stamp, /CUT OFF/);
     assert.equal(wasKilled(`once upon a time${stamp}`), true);
     assert.equal(wasKilled("once upon a time"), false);
