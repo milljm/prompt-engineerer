@@ -68,6 +68,7 @@ export function AppShell() {
       error: null,
     });
 
+    const prev = useEngineStore.getState().iterations.at(-1);
     await runEngine({
       goal: state.goal,
       seedPrompt: state.seedPrompt,
@@ -77,6 +78,8 @@ export function AppShell() {
       parentSystem: useEngineStore.getState().parentPrompts.draft,
       parentFollowupSystem: useEngineStore.getState().parentPrompts.followup,
       getLivePrompt: () => useEngineStore.getState().currentPrompt(),
+      ledger: prev?.ledger,
+      priorResults: prev?.scenarios,
       signal: ac.signal,
       onEvent: (event: EngineEvent) => {
         const store = useEngineStore.getState();

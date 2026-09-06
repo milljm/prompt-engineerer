@@ -6,7 +6,7 @@
  * until the target score, the iteration budget, or Stop.
  */
 
-import { childKillStamp, estimateTokens, wasKilled } from "./child-cap";
+import { childKillStamp, estimateTokens, stripKillStamp, wasKilled } from "./child-cap";
 import { extractJsonObject } from "./json";
 import { chat, stopLocal } from "./inference";
 import { isBrowserDirectUrl } from "./openai-url";
@@ -19,10 +19,14 @@ import {
   type ParentReply,
 } from "./parent-protocol";
 import {
+  isOrphanContinue,
+  isRunawayName,
   killFocusBlock,
   ledgerWantsKillHalt,
   mergeLedger,
   planNextScenarios,
+  RUNAWAY_CONTINUE,
+  RUNAWAY_OPEN,
   transcriptsKilled,
 } from "./rule-ledger";
 import type {
@@ -56,6 +60,8 @@ export type EngineInput = {
   signal: AbortSignal;
   onEvent: (event: EngineEvent) => void;
   getLivePrompt?: () => string;
+  ledger?: RuleRecord[];
+  priorResults?: ScenarioResult[];
 };
 
 function throwIfAborted(signal: AbortSignal) {
@@ -132,11 +138,24 @@ async function parentFollowUp(
   }
 }
 
+function seedChildHistory(prior: ScenarioResult[]): ChatMessage[] {
+  const last = prior.at(-1);
+  if (!last?.turns.length) return [];
+  const out: ChatMessage[] = [];
+  for (const t of last.turns) {
+    out.push({ role: "user", content: t.user });
+    const cleaned = stripKillStamp(t.assistant).trim();
+    if (cleaned) out.push({ role: "assistant", content: cleaned });
+  }
+  return out;
+}
+
 async function runScenarios(
   input: EngineInput,
   prompt: string,
   scenarios: ScenarioSpec[],
   iteration: number,
+  priorResults: ScenarioResult[],
 ): Promise<ScenarioResult[]> {
   const { settings, signal, onEvent } = input;
   const out: ScenarioResult[] = [];
@@ -158,7 +177,8 @@ async function runScenarios(
       event: { type: "scenario", name: spec.name, index: s + 1, of: scenarios.length },
     });
     const turns: ScenarioResult["turns"] = [];
-    const history: ChatMessage[] = [{ role: "system", content: prompt }];
+    const carry = isRunawayName(spec.name) ? seedChildHistory(priorResults.length ? priorResults : out) : [];
+    const history: ChatMessage[] = [{ role: "system", content: prompt }, ...carry];
     const planned = spec.turns.slice(0, Math.max(1, settings.turns));
     const maxTurns = Math.max(1, settings.turns);
     for (let n = 0; n < maxTurns; n++) {
@@ -166,6 +186,9 @@ async function runScenarios(
       let userText = "";
       if (n === 0) {
         userText = planned[0]?.user || inCharacterFollowUp("", 0);
+        if (carry.length && (isOrphanContinue(userText) || userText === RUNAWAY_OPEN)) {
+          userText = RUNAWAY_CONTINUE;
+        }
       } else {
         onEvent({
           type: "phase",
@@ -266,7 +289,8 @@ export async function runEngine(input: EngineInput) {
   let nextRev = (versions.at(-1)?.rev ?? 0) + 1;
   let pendingScenarios: ScenarioSpec[] | null = null;
   let lastPlanned: ScenarioSpec[] = [];
-  let ledger: RuleRecord[] = [];
+  let ledger: RuleRecord[] = [...(input.ledger ?? [])];
+  let lastResults: ScenarioResult[] = [...(input.priorResults ?? [])];
 
   const emitVersion = (version: PromptVersion) => {
     versions = [...versions, version];
@@ -371,7 +395,8 @@ export async function runEngine(input: EngineInput) {
       lastPlanned = scenarios;
 
       const tChild = performance.now();
-      const results = await runScenarios(input, promptText, scenarios, i);
+      const results = await runScenarios(input, promptText, scenarios, i, lastResults);
+      lastResults = results;
       childMs += performance.now() - tChild;
 
       throwIfAborted(signal);

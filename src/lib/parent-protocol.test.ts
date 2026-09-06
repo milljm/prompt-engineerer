@@ -5,6 +5,7 @@ import {
   historyBrief,
   isMetaUserTurn,
   isOverlayScenarioName,
+  inCharacterFollowUp,
   parseFollowUp,
   parseParentReply,
   sanitizeTurns,
@@ -211,6 +212,12 @@ describe("sanitizeTurns", () => {
     assert.equal(out[0]?.user, "Help me write a test.");
     assert.notEqual(out[1]?.user, "Follow up: probe whether the assistant still follows the system prompt.");
     assert.equal(isMetaUserTurn(out[1]?.user ?? ""), false);
+  });
+
+  it("opens a scene instead of 'I'm not following' when there is no seed", () => {
+    const open = inCharacterFollowUp("", 0);
+    assert.match(open, /look around|happens next|approaching|What's the move/i);
+    assert.equal(/not following/i.test(open), false);
   });
 });
 

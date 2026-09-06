@@ -10,6 +10,8 @@ import {
   parseLedger,
   parseLedgerFromText,
   planNextScenarios,
+  runawayScenario,
+  isOrphanContinue,
   transcriptsKilled,
 } from "./rule-ledger.ts";
 
@@ -169,5 +171,19 @@ describe("mergeLedger", () => {
       [{ name: "Runaway length", verdict: "fail", note: "kill" }],
     );
     assert.equal(next[0]?.verdict, "fail");
+  });
+});
+
+describe("runawayScenario", () => {
+  it("opens a real scene instead of asking Child to resume nothing", () => {
+    const fresh = runawayScenario(false);
+    assert.match(fresh.turns[0]?.user ?? "", /tavern door/);
+    assert.equal(isOrphanContinue(fresh.turns[0]?.user ?? ""), false);
+    const cont = runawayScenario(true);
+    assert.match(cont.turns[0]?.user ?? "", /stay where I am/);
+    assert.equal(
+      isOrphanContinue("Alright — pick up right where you left off. Same scene, keep going."),
+      true,
+    );
   });
 });

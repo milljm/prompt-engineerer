@@ -45,3 +45,9 @@ export function childKillStamp(cap: number, used: number): string {
 export function wasKilled(text: string): boolean {
   return text.includes(ENGINE_KILL_MARK);
 }
+
+/** Drop the engine stamp so Child can continue the truncated scene. */
+export function stripKillStamp(text: string): string {
+  const i = text.indexOf(ENGINE_KILL_MARK);
+  return i >= 0 ? text.slice(0, i).trimEnd() : text;
+}

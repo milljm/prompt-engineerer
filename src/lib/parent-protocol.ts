@@ -110,17 +110,24 @@ export function isMetaUserTurn(text: string): boolean {
   );
 }
 
+const SCENE_OPENS = [
+  "I step inside and look around. What do I see?",
+  "I wait by the door. What happens next?",
+  "I sit down. Anyone approaching?",
+  "I keep my voice low. What's the move?",
+];
+
 const FOLLOW_UPS = [
-  "That didn't do it. Same request — don't start over.",
-  "I'm not following. Shorter, same role.",
-  "Still stuck. Next small step only, don't dump the whole answer.",
+  "I stay in the scene. What happens next?",
+  "Still here. Next small step only.",
   "Do it again for a slightly harder case. Stay in role.",
-  "You drifted. Answer what I asked first, nothing else.",
+  "Answer what I asked first, nothing else.",
 ];
 
 export function inCharacterFollowUp(seed: string, index: number): string {
   const clipped = seed.replace(/\s+/g, " ").trim().slice(0, 140);
-  if (index === 0 && clipped) {
+  if (!clipped) return SCENE_OPENS[index % SCENE_OPENS.length];
+  if (index === 0) {
     return `That wasn't enough. Going back to: "${clipped}" — continue, don't restart.`;
   }
   return FOLLOW_UPS[index % FOLLOW_UPS.length];

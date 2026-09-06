@@ -124,10 +124,20 @@ export function ledgerWantsKillHalt(ledger: RuleRecord[]): boolean {
   );
 }
 
-export function runawayScenario(): ScenarioSpec {
+export const RUNAWAY_OPEN =
+  "I push open the tavern door and look around. Anyone here I should know about?";
+export const RUNAWAY_CONTINUE = "I stay where I am. What happens next?";
+
+export function isOrphanContinue(user: string): boolean {
+  return /pick up|left off|same scene, keep going|resume from|continue from (there|the last)|no prior scene/i.test(
+    user,
+  );
+}
+
+export function runawayScenario(hasPrior = false): ScenarioSpec {
   return {
     name: "Runaway length",
-    turns: [{ user: "Alright — pick up right where you left off. Same scene, keep going." }],
+    turns: [{ user: hasPrior ? RUNAWAY_CONTINUE : RUNAWAY_OPEN }],
   };
 }
 
