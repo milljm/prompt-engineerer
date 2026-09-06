@@ -4,6 +4,7 @@ import {
   fallbackScenarios,
   historyBrief,
   isMetaUserTurn,
+  isOverlayScenarioName,
   parseFollowUp,
   parseParentReply,
   sanitizeTurns,
@@ -31,6 +32,24 @@ describe("parseParentReply", () => {
     assert.equal(reply.score, 7);
     assert.equal(reply.pass, false);
     assert.equal(reply.scenarios[0]?.turns.length, 2);
+  });
+
+  it("drops overlay-only scenes once a behavior scene exists", () => {
+    const reply = parseParentReply(
+      {
+        action: "draft",
+        system_prompt: "Agency plus 400 words.",
+        scenarios: [
+          { name: "Player agency", turns: [{ user: "I walk in." }] },
+          { name: "Word cap", turns: [{ user: "Write a lot." }] },
+        ],
+      },
+      1,
+    );
+    assert.deepEqual(
+      reply.scenarios.map((s) => s.name),
+      ["Player agency"],
+    );
   });
 
   it("accepts camelCase aliases and treats action=pass as pass", () => {
@@ -71,6 +90,14 @@ describe("parseParentReply", () => {
   it("rejects a non-object", () => {
     assert.throws(() => parseParentReply(null, 1), /not an object/);
     assert.throws(() => parseParentReply("draft", 1), /not an object/);
+  });
+});
+
+describe("isOverlayScenarioName", () => {
+  it("flags word-cap scenes and leaves agency alone", () => {
+    assert.equal(isOverlayScenarioName("Word cap"), true);
+    assert.equal(isOverlayScenarioName("Word count"), true);
+    assert.equal(isOverlayScenarioName("Player agency"), false);
   });
 });
 
