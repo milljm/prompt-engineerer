@@ -4,27 +4,32 @@ A walk-away studio for **wrangling system prompts** against models that ignore
 polite rules.
 
 You describe the behavior you want. A **Parent** model writes a system prompt
-and designs tests — often one scenario per critical rule. A **Child** model
+and designs tests — **one scenario per critical rule**. A **Child** model
 has to follow that prompt. After each Child reply, Parent *sees the actual
-output* and writes the next user turn to poke whatever just broke. When the
-scenarios finish, Parent scores the transcripts and revises the prompt.
+output* and writes the next user turn to poke that rule. When the scenarios
+finish, Parent scores the transcripts and revises the prompt.
 Repeat until the Child actually obeys, or you hit Stop.
 
 That is the point. Strong-story models will look at “do not exceed 600 words”
 and ignore it. Parent keeps changing the *wording of the cage* until Child
-complies. You click **Engineer** and go do something else.
+complies. When it adds a new rule to reign Child in, it also adds a scenario
+that spends the full turn budget on that rule. You click **Engineer** and go
+do something else.
 
 Works with any **OpenAI-compatible** `/v1` server: local Edge / MLX / llama.cpp /
 Ollama / vLLM / LM Studio, or a hosted API (OpenAI, xAI, Groq, OpenRouter, …).
 
 ## What a run does
 
-1. Parent drafts a full system prompt (or uses your seed) and names scenarios.
-2. For each scenario, Child answers turn 1. Parent reads that reply and writes
-   turn 2. Repeat up to **Turns per test** (1–20).
+1. Parent drafts a full system prompt (or uses your seed) and names scenarios —
+   one per critical rule.
+2. For each rule, Child answers turn 1. Parent reads that reply and writes
+   turn 2, still pressing *that* rule. Repeat up to **Turns per rule** (1–20).
 3. After every scenario, Parent gets the full Child transcripts and scores
    1–10. Miss the target → revise or revert. Hit it → stop.
-4. Revisions stay on a timeline with scores and diffs. Restore or abandon any
+4. If Parent adds a new cage rule, the next loop tests it. Old rules keep
+   their scenarios. **Max iterations** is the runaway brake, not the turn slider.
+5. Revisions stay on a timeline with scores and diffs. Restore or abandon any
    rev. Parent sees every prior prompt and score so it can tell improve vs
    degrade.
 
