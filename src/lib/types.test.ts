@@ -43,6 +43,12 @@ describe("migrateSettings", () => {
     assert.equal(migrateSettings({ turns: 99 }).turns, TURNS_MAX);
     assert.equal(migrateSettings({ turns: 0 }).turns, 1);
   });
+
+  it("clamps the Child token cap", () => {
+    assert.equal(migrateSettings({}).childMaxTokens, DEFAULT_SETTINGS.childMaxTokens);
+    assert.equal(migrateSettings({ childMaxTokens: 8 }).childMaxTokens, 32);
+    assert.equal(migrateSettings({ childMaxTokens: 99999 }).childMaxTokens, 8192);
+  });
 });
 
 describe("clampTurns", () => {
