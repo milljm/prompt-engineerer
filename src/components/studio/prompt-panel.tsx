@@ -6,13 +6,20 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { diffLines } from "@/lib/diff";
 import { useEngineStore } from "@/lib/store";
-import type { PromptVersion } from "@/lib/types";
+import type { IterationRecord, PromptVersion } from "@/lib/types";
 import { cn } from "@/lib/utils";
+
+function scoreForRev(rev: number, version: PromptVersion | undefined, iterations: IterationRecord[]): number | null {
+  if (version?.score != null) return version.score;
+  const hits = iterations.filter((it) => it.rev === rev && it.score != null);
+  return hits.at(-1)?.score ?? null;
+}
 
 export function PromptPanel() {
   const goal = useEngineStore((s) => s.goal);
   const seedPrompt = useEngineStore((s) => s.seedPrompt);
   const versions = useEngineStore((s) => s.versions);
+  const iterations = useEngineStore((s) => s.iterations);
   const currentRev = useEngineStore((s) => s.currentRev);
   const viewingRev = useEngineStore((s) => s.viewingRev);
   const status = useEngineStore((s) => s.status);
@@ -29,6 +36,7 @@ export function PromptPanel() {
     versions.find((v) => v.rev === viewingRev) ??
     versions.find((v) => v.rev === currentRev) ??
     null;
+  const viewedScore = viewed ? scoreForRev(viewed.rev, viewed, iterations) : null;
   const baseline = versions.reduce<PromptVersion | null>(
     (best, v) => (best == null || v.rev < best.rev ? v : best),
     null,
@@ -66,8 +74,8 @@ export function PromptPanel() {
         ) : (
           <Badge variant="outline">seed</Badge>
         )}
-        {viewed?.score != null ? (
-          <Badge variant={viewed.score >= 8 ? "ok" : "outline"}>{viewed.score}/10</Badge>
+        {viewedScore != null ? (
+          <Badge variant={viewedScore >= 8 ? "ok" : "outline"}>{viewedScore}/10</Badge>
         ) : viewed ? (
           <Badge variant="outline">unscored</Badge>
         ) : null}
@@ -101,13 +109,14 @@ export function PromptPanel() {
         <div className="min-w-0 border-b border-border">
           <div
             ref={chipScroller}
-            className="chip-scroll flex flex-nowrap gap-1.5 overflow-x-auto overscroll-x-contain px-4 py-2 md:px-5"
+            className="chip-scroll flex flex-nowrap gap-1.5 overflow-x-auto overflow-y-visible overscroll-x-contain px-4 py-2 md:px-5"
             aria-label="Prompt revisions"
           >
             {versions.map((v) => (
               <VersionChip
                 key={v.rev}
                 version={v}
+                score={scoreForRev(v.rev, v, iterations)}
                 active={v.rev === (viewingRev ?? currentRev)}
                 current={v.rev === currentRev}
                 innerRef={v.rev === (viewingRev ?? currentRev) ? activeChip : undefined}
@@ -192,18 +201,19 @@ function PromptDiff({
 
 function VersionChip({
   version,
+  score,
   active,
   current,
   onClick,
   innerRef,
 }: {
   version: PromptVersion;
+  score: number | null;
   active: boolean;
   current: boolean;
   onClick: () => void;
   innerRef?: Ref<HTMLButtonElement>;
 }) {
-  const score = version.score;
   return (
     <div className="flex shrink-0 flex-col items-center gap-1">
       {score != null ? (
