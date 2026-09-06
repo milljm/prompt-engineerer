@@ -3,7 +3,8 @@
  * a (sometimes messy) Parent reply into a typed revision + test plan.
  */
 
-import { SCENARIOS_MAX, type PromptVersion, type ScenarioSpec } from "./types.ts";
+import { SCENARIOS_MAX, type PromptVersion, type RuleRecord, type ScenarioSpec } from "./types.ts";
+import { parseLedger } from "./rule-ledger.ts";
 
 /** System prompt given to the Parent LLM every call. */
 export const PARENT_SYSTEM = `You are Parent, a prompt engineer. You write and iterate on a SYSTEM PROMPT for a Child LLM.
@@ -28,7 +29,9 @@ SCENARIO BUDGET — two kinds of rules:
 - Example: PLAYER AGENCY gets a scenario. WORD LIMIT does not. While you test agency, also count words and ding the score if Child blows the cap.
 - Never name a scenario "Word cap", "Word count", "Be concise", "Length", or "Token limit". Fold that check into the other scenes.
 - If you ADD a behavior rule, ADD a scenario for it. If you ADD an overlay (word cap, format), do not add a scenario — just judge it everywhere.
-- Do not drop old behavior scenarios unless you removed that rule.
+- Do not drop old behavior scenarios unless you removed that rule OR the RULE LEDGER marks them PASS. Passed rules are done — do not spend turns on them.
+- RULE LEDGER is the memory of this run. Every judging reply MUST include rule_ledger: one row per critical rule (name, verdict pass|fail, short note). Copy PASS rows forward. Only FAIL (or brand-new) rules get scenarios next iteration.
+- [ENGINE KILL] is a hard halt. If any Child turn contains that mark: action cannot be pass; score the truncated prose as a failure (≤4); ignore PASS rows for scheduling; emit exactly one scenario named "Runaway length" and no agency/prose/persona scenes. Tighten a stop-the-runaway rule. Overlays that caused a kill are no longer overlays — they are the only test that matters until Child stops hitting the cap.
 - Turns are PER BEHAVIOR SCENARIO. Each of those gets the full requested turn count.
 - You may emit up to 20 behavior scenarios. Max iterations stops a runaway run.
 - Each scenario needs a strong FIRST user turn that pressures that behavior. Later turns are written live; still include fallback follow-ups.
@@ -45,6 +48,7 @@ JSON shape:
   "revert_to": null | number,
   "system_prompt": string,
   "scenarios": [ { "name": string, "turns": [ { "user": string } ] } ],
+  "rule_ledger": [ { "name": string, "verdict": "pass" | "fail", "note": string } ],
   "score": null | number,
   "pass": false,
   "rationale": string
@@ -79,6 +83,7 @@ export type ParentReply = {
   score: number | null;
   pass: boolean;
   rationale: string;
+  ledger: RuleRecord[];
 };
 
 function asAction(value: unknown): ParentAction {
@@ -161,7 +166,8 @@ function asScenarios(raw: unknown, minTurns: number): ScenarioSpec[] {
 
 /** Names that are overlay checks, not behavior scenes. */
 export function isOverlayScenarioName(name: string): boolean {
-  return /word\s*(cap|count|limit)|token\s*(cap|limit)|length|concise|be brief|format only/i.test(name);
+  if (/runaway|engine kill/i.test(name)) return false;
+  return /word\s*(cap|count|limit)|token\s*(cap|limit)|^\s*length\s*$|concise|be brief|format only/i.test(name);
 }
 
 export function parseParentReply(raw: unknown, minTurns: number): ParentReply {
@@ -201,6 +207,7 @@ export function parseParentReply(raw: unknown, minTurns: number): ParentReply {
     score,
     pass: rec.pass === true || action === "pass",
     rationale,
+    ledger: parseLedger(rec.rule_ledger ?? rec.ledger),
   };
 }
 
@@ -263,3 +270,16 @@ export function fallbackScenarios(goal: string, turns: number): ScenarioSpec[] {
     { name: "Pressure", turns: pressure },
   ];
 }
+
+export const PARENT_PROMPT_KEYS = ["draft", "followup"] as const;
+export type ParentPromptKey = (typeof PARENT_PROMPT_KEYS)[number];
+
+export const PARENT_PROMPT_CATALOG: { key: ParentPromptKey; label: string; factory: string }[] = [
+  { key: "draft", label: "Draft & judge", factory: PARENT_SYSTEM },
+  { key: "followup", label: "Live follow-up", factory: PARENT_FOLLOWUP_SYSTEM },
+];
+
+export function defaultParentPrompts(): Record<ParentPromptKey, string> {
+  return { draft: PARENT_SYSTEM, followup: PARENT_FOLLOWUP_SYSTEM };
+}
+

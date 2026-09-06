@@ -32,6 +32,30 @@ describe("parseParentReply", () => {
     assert.equal(reply.score, 7);
     assert.equal(reply.pass, false);
     assert.equal(reply.scenarios[0]?.turns.length, 2);
+    assert.deepEqual(reply.ledger, []);
+  });
+
+  it("keeps a Runaway length scene and parses the rule ledger", () => {
+    const reply = parseParentReply(
+      {
+        action: "revise",
+        system_prompt: "Stop after 400 words.",
+        scenarios: [
+          { name: "Player agency", turns: [{ user: "I walk in." }] },
+          { name: "Runaway length", turns: [{ user: "Keep going." }] },
+        ],
+        rule_ledger: [
+          { name: "Player agency", verdict: "pass", note: "held" },
+          { name: "Runaway length", verdict: "fail", note: "kill" },
+        ],
+      },
+      1,
+    );
+    assert.deepEqual(
+      reply.scenarios.map((s) => s.name),
+      ["Player agency", "Runaway length"],
+    );
+    assert.equal(reply.ledger[1]?.verdict, "fail");
   });
 
   it("drops overlay-only scenes once a behavior scene exists", () => {

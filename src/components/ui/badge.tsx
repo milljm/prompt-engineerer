@@ -9,7 +9,7 @@ const badgeVariants = cva(
         default: "bg-secondary text-muted-foreground",
         solid: "bg-primary text-primary-foreground",
         outline: "shadow-[var(--shadow-border)] text-muted-foreground",
-        parent: "bg-secondary text-foreground",
+        parent: "bg-ok/15 text-ok",
         child: "bg-hot/15 text-hot",
         ok: "bg-ok/15 text-ok",
       },

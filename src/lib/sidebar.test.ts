@@ -1,10 +1,12 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  SIDEBAR_COLLAPSE_AT,
   SIDEBAR_DEFAULT,
   SIDEBAR_MAX,
   SIDEBAR_MIN,
   clampSidebarWidth,
+  shouldCollapseSidebar,
   suggestSidebarWidth,
 } from "./sidebar.ts";
 
@@ -32,5 +34,13 @@ describe("suggestSidebarWidth", () => {
     const width = suggestSidebarWidth([long]);
     assert.ok(width > SIDEBAR_DEFAULT);
     assert.ok(width <= SIDEBAR_MAX);
+  });
+});
+
+describe("shouldCollapseSidebar", () => {
+  it("snaps shut only past the collapse threshold", () => {
+    assert.equal(shouldCollapseSidebar(SIDEBAR_MIN), false);
+    assert.equal(shouldCollapseSidebar(SIDEBAR_COLLAPSE_AT), true);
+    assert.equal(shouldCollapseSidebar(SIDEBAR_COLLAPSE_AT - 10), true);
   });
 });

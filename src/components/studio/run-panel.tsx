@@ -8,8 +8,9 @@ import { useEngineStore } from "@/lib/store";
 import type { LiveLine } from "@/lib/live-transcript";
 import type { IterationRecord, ScenarioTurn } from "@/lib/types";
 import { cn, formatMs } from "@/lib/utils";
+import { Markdown } from "./markdown";
 
-export function RunPanel({
+export function RunToolbar({
   onStart,
   onStop,
 }: {
@@ -18,10 +19,7 @@ export function RunPanel({
 }) {
   const status = useEngineStore((s) => s.status);
   const phase = useEngineStore((s) => s.phase);
-  const liveLines = useEngineStore((s) => s.liveLines);
-  const liveParent = useEngineStore((s) => s.liveParent);
   const error = useEngineStore((s) => s.error);
-  const iterations = useEngineStore((s) => s.iterations);
   const settings = useEngineStore((s) => s.settings);
   const goal = useEngineStore((s) => s.goal);
   const resetRun = useEngineStore((s) => s.resetRun);
@@ -32,79 +30,109 @@ export function RunPanel({
   const stopping = status === "stopping";
   const canStart = !running && !stopping && goal.trim().length > 8 && parentModel && childModel;
 
+  return (
+    <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3 md:px-5">
+      {running || stopping ? (
+        <Button type="button" variant="destructive" onClick={onStop} className="h-10">
+          <Square className="size-3.5 fill-current" />
+          {stopping ? "Stopping" : "Stop"}
+        </Button>
+      ) : (
+        <Button type="button" onClick={onStart} disabled={!canStart} className="h-10">
+          <Swords className="size-4" />
+          Engineer
+        </Button>
+      )}
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        disabled={running || stopping}
+        onClick={() => resetRun()}
+        title="Clear versions and iteration log"
+      >
+        <Eraser className="size-3.5" />
+        New run
+      </Button>
+      <div className="min-w-0 flex-1">
+        {running || stopping ? (
+          <p className="shimmer-text truncate text-sm">{phase || "Working…"}</p>
+        ) : status === "passed" ? (
+          <p className="truncate text-sm text-ok">Quality target reached.</p>
+        ) : status === "failed" ? (
+          <p className="text-sm text-destructive">{error ?? "Failed"}</p>
+        ) : status === "stopped" ? (
+          <p className="truncate text-sm text-muted-foreground">Stopped.</p>
+        ) : (
+          <p className="truncate text-sm text-muted-foreground">
+            Parent writes. Child is thrown a scenario. Repeat until {settings.targetScore}/10.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function StatsBar() {
+  const iterations = useEngineStore((s) => s.iterations);
+  const target = useEngineStore((s) => s.settings.targetScore);
   const last = iterations.at(-1);
   const best = iterations.reduce<number | null>((acc, it) => {
     if (it.score == null) return acc;
     return acc == null ? it.score : Math.max(acc, it.score);
   }, null);
   const avgMs =
-    iterations.length > 0
-      ? iterations.reduce((a, it) => a + it.ms, 0) / iterations.length
-      : 0;
+    iterations.length > 0 ? iterations.reduce((a, it) => a + it.ms, 0) / iterations.length : 0;
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col border-t border-border lg:border-l lg:border-t-0">
-      <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3 md:px-5">
-        {running || stopping ? (
-          <Button type="button" variant="destructive" onClick={onStop} className="h-10">
-            <Square className="size-3.5 fill-current" />
-            {stopping ? "Stopping" : "Stop"}
-          </Button>
-        ) : (
-          <Button type="button" onClick={onStart} disabled={!canStart} className="h-10">
-            <Swords className="size-4" />
-            Engineer
-          </Button>
-        )}
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          disabled={running || stopping}
-          onClick={() => resetRun()}
-          title="Clear versions and iteration log"
-        >
-          <Eraser className="size-3.5" />
-          New run
-        </Button>
-        <div className="min-w-0 flex-1">
-          {running || stopping ? (
-            <p className="shimmer-text truncate text-sm">{phase || "Working…"}</p>
-          ) : status === "passed" ? (
-            <p className="truncate text-sm text-ok">Quality target reached.</p>
-          ) : status === "failed" ? (
-            <p className="text-sm text-destructive">{error ?? "Failed"}</p>
-          ) : status === "stopped" ? (
-            <p className="truncate text-sm text-muted-foreground">Stopped.</p>
-          ) : (
-            <p className="truncate text-sm text-muted-foreground">
-              Parent writes. Child is thrown a scenario. Repeat until {settings.targetScore}/10.
-            </p>
-          )}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-px border-b border-border bg-border sm:grid-cols-4">
+    <div className="shrink-0 border-b border-border">
+      <div className="grid grid-cols-2 gap-px bg-border sm:grid-cols-4">
         <Stat label="Iteration" value={iterations.length ? `${iterations.length}` : "—"} />
         <Stat label="Last score" value={last?.score != null ? `${last.score}/10` : "—"} />
         <Stat label="Best" value={best != null ? `${best}/10` : "—"} />
         <Stat label="Avg loop" value={iterations.length ? formatMs(avgMs) : "—"} />
       </div>
+      {iterations.length > 0 ? <ScoreStrip iterations={iterations} target={target} /> : null}
+    </div>
+  );
+}
 
-      {iterations.length > 0 ? <ScoreStrip iterations={iterations} target={settings.targetScore} /> : null}
+export function LivePane() {
+  const status = useEngineStore((s) => s.status);
+  const liveLines = useEngineStore((s) => s.liveLines);
+  const liveParent = useEngineStore((s) => s.liveParent);
+  const iterations = useEngineStore((s) => s.iterations);
+  const running = status === "running" || status === "stopping";
+  const showLive = liveLines.length > 0;
+  const showEmpty = !showLive && !iterations.length && !running;
 
-      <ScrollArea className="min-h-0 flex-1">
-        <div className="space-y-3 px-4 py-4 md:px-5">
-          {liveLines.length ? <LiveTranscript lines={liveLines} /> : null}
-          {liveParent && (running || status === "failed") ? <LiveParent text={liveParent} /> : null}
-
-          {!iterations.length && !running ? (
-            <EmptyHint />
-          ) : (
-            [...iterations].reverse().map((it) => <IterationCard key={it.id} record={it} />)
-          )}
+  return (
+    <div className="flex min-h-[22rem] min-w-0 shrink-0 flex-col border-t border-border xl:min-h-0 xl:flex-1 xl:border-l xl:border-t-0">
+      {showEmpty ? (
+        <EmptyHint />
+      ) : (
+        <div className="flex min-h-0 flex-1 flex-col">
+          {showLive ? (
+            <div className="flex min-h-72 min-w-0 flex-1 flex-col p-4 xl:min-h-0 md:px-5">
+              <LiveTranscript lines={liveLines} />
+            </div>
+          ) : null}
+          {liveParent && (running || status === "failed") ? (
+            <div className="shrink-0 px-4 pb-3 md:px-5">
+              <LiveParent text={liveParent} />
+            </div>
+          ) : null}
+          {iterations.length ? (
+            <ScrollArea className={cn("min-h-0", showLive ? "max-h-[42%] shrink-0" : "flex-1")}>
+              <div className="space-y-3 px-4 py-4 md:px-5">
+                {[...iterations].reverse().map((it) => (
+                  <IterationCard key={it.id} record={it} />
+                ))}
+              </div>
+            </ScrollArea>
+          ) : null}
         </div>
-      </ScrollArea>
+      )}
     </div>
   );
 }
@@ -120,7 +148,7 @@ function LiveTranscript({ lines }: { lines: LiveLine[] }) {
   }, [lines]);
 
   return (
-    <article className="flex h-96 min-h-0 flex-col overflow-hidden rounded-xl bg-secondary p-3 shadow-[var(--shadow-border)]">
+    <article className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl bg-secondary p-3 shadow-[var(--shadow-border)]">
       <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
         Live test
       </p>
@@ -190,8 +218,8 @@ function LiveLineView({ line }: { line: LiveLine }) {
   return (
     <div className="py-1.5">
       <Badge variant={isParent ? "parent" : "child"}>{isParent ? "Parent" : "Child"}</Badge>
-      <p className="mt-1 whitespace-pre-wrap font-mono text-xs leading-relaxed text-foreground">
-        {line.text || (isParent ? "" : "…")}
+      <p className="mt-1 text-sm leading-relaxed text-foreground">
+        <Markdown text={line.text || (isParent ? "" : "…")} />
       </p>
     </div>
   );
@@ -215,15 +243,15 @@ function TurnDialogue({ turn, index, of }: { turn: ScenarioTurn; index: number; 
       <TurnRule label={of > 1 ? `Turn ${index} of ${of}` : `Turn ${index}`} />
       <div className="py-1.5">
         <Badge variant="parent">Parent</Badge>
-        <p className="mt-1 whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-foreground">
-          {turn.user}
-        </p>
+        <div className="mt-1 text-sm leading-relaxed text-foreground">
+          <Markdown text={turn.user} />
+        </div>
       </div>
       <div className="py-1.5">
         <Badge variant="child">Child</Badge>
-        <p className="mt-1 whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-muted-foreground">
-          {turn.assistant}
-        </p>
+        <div className="mt-1 text-sm leading-relaxed text-foreground">
+          <Markdown text={turn.assistant} />
+        </div>
       </div>
     </div>
   );
@@ -248,7 +276,7 @@ function ScoreStrip({
   target: number;
 }) {
   return (
-    <div className="flex items-end gap-1 border-b border-border px-4 py-2 md:px-5">
+    <div className="flex items-end gap-1 px-4 py-2 md:px-5">
       {iterations.map((it) => {
         const pending = it.action === "judging" || it.score == null;
         const score = it.score ?? 0;
@@ -298,6 +326,15 @@ function IterationCard({ record }: { record: IterationRecord }) {
           {record.rationale}
         </p>
       ) : null}
+      {record.ledger?.length ? (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {record.ledger.map((row) => (
+            <Badge key={row.name} variant={row.verdict === "pass" ? "ok" : "child"}>
+              {row.name}: {row.verdict}
+            </Badge>
+          ))}
+        </div>
+      ) : null}
       <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
         <span className="font-mono tabular-nums">parent {formatMs(record.phaseMs.parent)}</span>
         <span className="font-mono tabular-nums">child {formatMs(record.phaseMs.child)}</span>
@@ -329,12 +366,14 @@ function IterationCard({ record }: { record: IterationRecord }) {
 
 function EmptyHint() {
   return (
-    <div className="rounded-xl bg-card px-4 py-8 text-center shadow-[var(--shadow-border)]">
-      <p className="font-display text-xl italic">Ready to forge</p>
-      <p className="mx-auto mt-2 max-w-sm text-sm text-muted-foreground">
-        Describe the behavior you want. Parent drafts a system prompt, throws scenarios at Child —
-        including extra turns — then scores the result and iterates.
-      </p>
+    <div className="flex min-h-0 flex-1 items-center justify-center px-4 py-8">
+      <div className="max-w-sm text-center">
+        <p className="font-display text-xl italic">The bout</p>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Parent and Child meet here. Parent throws the user turns. Child answers under the system
+          prompt. Kills, pokes, and the wrangle play out in this pane.
+        </p>
+      </div>
     </div>
   );
 }

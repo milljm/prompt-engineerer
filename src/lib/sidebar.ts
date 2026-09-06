@@ -14,6 +14,12 @@ export const SIDEBAR_MAX = 640;
 /** Comfortable default — wider than the old 20rem cap. */
 export const SIDEBAR_DEFAULT = 400;
 
+/** Collapsed rail width (px). Icon column, not a usable settings pane. */
+export const SIDEBAR_RAIL = 44;
+
+/** Drag further left than this (below min) and the sidebar collapses. */
+export const SIDEBAR_COLLAPSE_AT = SIDEBAR_MIN - 48;
+
 /**
  * Clamp a persisted or dragged width onto the allowed range.
  *
@@ -40,4 +46,9 @@ export function suggestSidebarWidth(labels: string[]): number {
   // IBM Plex Mono 11px ≈ 7.2px / character, plus padding and parent/child badges.
   const fromChars = Math.round(longest * 7.2 + 72);
   return clampSidebarWidth(Math.max(SIDEBAR_DEFAULT, fromChars));
+}
+
+/** True when a live drag has gone far enough left to snap the sidebar shut. */
+export function shouldCollapseSidebar(rawWidth: number): boolean {
+  return Number.isFinite(rawWidth) && rawWidth <= SIDEBAR_COLLAPSE_AT;
 }

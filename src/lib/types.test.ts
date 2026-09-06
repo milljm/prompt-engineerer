@@ -49,6 +49,11 @@ describe("migrateSettings", () => {
     assert.equal(migrateSettings({ childMaxTokens: 8 }).childMaxTokens, 32);
     assert.equal(migrateSettings({ childMaxTokens: 99999 }).childMaxTokens, 8192);
   });
+
+  it("defaults sidebarCollapsed to false", () => {
+    assert.equal(migrateSettings({}).sidebarCollapsed, false);
+    assert.equal(migrateSettings({ sidebarCollapsed: true }).sidebarCollapsed, true);
+  });
 });
 
 describe("clampTurns", () => {
@@ -70,6 +75,7 @@ describe("upsertIteration", () => {
     rationale: "Parent judging…",
     action: "judging" as const,
     scenarios: [],
+    ledger: [],
     phaseMs: { parent: 1, child: 1 },
   };
 
