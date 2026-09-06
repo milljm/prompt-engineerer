@@ -3,7 +3,6 @@ import { ArrowLeft, Copy, Download, RotateCcw, Save, ScrollText, Undo2 } from "l
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { LivePromptEditor } from "./live-prompt";
 import { copyText, downloadText, versionsMarkdown } from "@/lib/export-prompts";
@@ -53,7 +52,10 @@ export function PromptPanel() {
   const promptValue = viewed ? viewed.prompt : seedPrompt;
   const canEditSeed = versions.length === 0;
   const editingCurrent = Boolean(viewed && viewed.rev === currentRev);
-  const draftValue = editingCurrent ? (promptDraft ?? viewed!.prompt) : promptValue;
+  const draftValue = editingCurrent ? (promptDraft ?? viewed?.prompt ?? "") : promptValue;
+  const unsaved = Boolean(
+    editingCurrent && promptDraft != null && viewed != null && promptDraft !== viewed.prompt,
+  );
 
   useEffect(() => {
     activeChip.current?.scrollIntoView({ behavior: "smooth", inline: "nearest", block: "nearest" });
@@ -64,8 +66,8 @@ export function PromptPanel() {
   }
 
   return (
-    <div className="flex min-w-0 shrink-0 flex-col overflow-hidden xl:min-h-0 xl:flex-1">
-      <header className="border-b border-border px-4 py-3 md:px-5">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      <header className="shrink-0 border-b border-border px-4 py-3 md:px-5">
         <div className="flex items-center gap-2">
           <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
             What you want
@@ -85,7 +87,7 @@ export function PromptPanel() {
         <GoalField running={running} />
       </header>
 
-      <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2 md:px-5">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-4 py-2 md:px-5">
         <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
           System prompt
         </p>
@@ -157,7 +159,7 @@ export function PromptPanel() {
       </div>
 
       {versions.length > 0 ? (
-        <div className="min-w-0 border-b border-border">
+        <div className="min-w-0 shrink-0 border-b border-border">
           <div
             ref={chipScroller}
             className="chip-scroll flex flex-nowrap gap-1.5 overflow-x-auto overflow-y-visible overscroll-x-contain px-4 py-2 md:px-5"
@@ -179,47 +181,40 @@ export function PromptPanel() {
         </div>
       ) : null}
 
-      <ScrollArea className="min-h-0 flex-1">
-        <div className="px-4 py-3 md:px-5">
+      <div className="flex min-h-0 flex-1 flex-col px-4 py-3 md:px-5">
           {canEditSeed ? (
             <Textarea
               value={promptValue}
               onChange={(e) => setSeedPrompt(e.target.value)}
               aria-label="System prompt under test"
               placeholder="Leave blank and Parent will draft the first system prompt."
-              className="min-h-56 font-mono text-[13px] leading-relaxed bg-card"
+              className="h-full min-h-0 flex-1 font-mono text-[13px] leading-relaxed bg-card"
             />
           ) : viewed ? (
             <LivePromptEditor
-              baseline={editingCurrent ? viewed.prompt : (previous?.prompt ?? "")}
+              baseline={previous?.prompt ?? viewed.prompt}
               value={draftValue}
               onChange={editingCurrent ? setPromptDraft : undefined}
-              fromLabel={
-                editingCurrent ? `v${viewed.rev}` : previous ? `v${previous.rev}` : "∅"
-              }
-              toLabel={
-                editingCurrent && promptDraft != null && promptDraft !== viewed.prompt
-                  ? "edit"
-                  : `v${viewed.rev}`
-              }
+              fromLabel={previous ? `v${previous.rev}` : `v${viewed.rev}`}
+              toLabel={unsaved ? "edit" : `v${viewed.rev}`}
               editable={editingCurrent}
+              unsaved={unsaved}
             />
           ) : (
-            <pre className="min-h-56 whitespace-pre-wrap rounded-md bg-card p-3 font-mono text-[13px] leading-relaxed text-foreground shadow-[var(--shadow-border)]">
+            <pre className="min-h-0 flex-1 whitespace-pre-wrap rounded-md bg-card p-3 font-mono text-[13px] leading-relaxed text-foreground shadow-[var(--shadow-border)]">
               {promptValue || "Leave blank and Parent will draft the first system prompt."}
             </pre>
           )}
           {viewed?.rationale ? (
-            <p className="mt-3 text-xs leading-relaxed text-muted-foreground">{viewed.rationale}</p>
+            <p className="mt-3 shrink-0 text-xs leading-relaxed text-muted-foreground">{viewed.rationale}</p>
           ) : (
-            <p className="mt-3 text-xs text-muted-foreground">
+            <p className="mt-3 shrink-0 text-xs text-muted-foreground">
               Edit this prompt any time — added lines go green, dropped lines sit in red above.
               Parent sees unified diffs of each revision, not the full history. A pending edit is
               absorbed at the next iteration.
             </p>
           )}
         </div>
-      </ScrollArea>
     </div>
   );
 }
@@ -413,7 +408,7 @@ function ParentPromptsPane({ onBack, running }: { onBack: () => void; running: b
   const dirty = drafts[tab] !== saved[tab];
 
   return (
-    <div className="flex min-w-0 shrink-0 flex-col overflow-hidden xl:min-h-0 xl:flex-1">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       <header className="flex items-center gap-2 border-b border-border px-4 py-3 md:px-5">
         <Button type="button" variant="ghost" size="sm" onClick={onBack}>
           <ArrowLeft className="size-3.5" />
@@ -440,7 +435,7 @@ function ParentPromptsPane({ onBack, running }: { onBack: () => void; running: b
           ))}
         </div>
       </div>
-      <div className="flex items-center gap-2 border-b border-border px-4 py-2 md:px-5">
+      <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2 md:px-5">
         <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">{meta.label}</p>
         {dirty ? <Badge variant="outline">unsaved</Badge> : null}
         <div className="ml-auto flex flex-wrap items-center justify-end gap-1">
@@ -474,21 +469,19 @@ function ParentPromptsPane({ onBack, running }: { onBack: () => void; running: b
           </Button>
         </div>
       </div>
-      <ScrollArea className="min-h-0 flex-1">
-        <div className="px-4 py-3 md:px-5">
-          <Textarea
-            value={drafts[tab]}
-            disabled={running}
-            onChange={(e) => setDrafts((d) => ({ ...d, [tab]: e.target.value }))}
-            aria-label={meta.label}
-            className="min-h-[28rem] font-mono text-[13px] leading-relaxed bg-card"
-          />
-          <p className="mt-3 text-xs text-muted-foreground">
-            These are the system prompts Parent itself receives. Save applies to the next call.
-            Restore puts back the shipped original. A run in progress keeps using the prompt it started with.
-          </p>
-        </div>
-      </ScrollArea>
+      <div className="flex min-h-0 flex-1 flex-col px-4 py-3 md:px-5">
+        <Textarea
+          value={drafts[tab]}
+          disabled={running}
+          onChange={(e) => setDrafts((d) => ({ ...d, [tab]: e.target.value }))}
+          aria-label={meta.label}
+          className="min-h-0 flex-1 font-mono text-[13px] leading-relaxed bg-card"
+        />
+        <p className="mt-3 shrink-0 text-xs text-muted-foreground">
+          These are the system prompts Parent itself receives. Save applies to the next call.
+          Restore puts back the shipped original. A run in progress keeps using the prompt it started with.
+        </p>
+      </div>
     </div>
   );
 }

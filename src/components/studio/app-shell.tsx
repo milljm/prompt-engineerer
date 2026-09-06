@@ -183,8 +183,8 @@ export function AppShell() {
             2-pane  md–xl    (768–1279): sidebar | stacked studio
             1-pane  <md      (<768): hamburger + stacked studio
           */}
-          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto xl:flex-row xl:overflow-hidden">
-            <div className="flex min-w-0 shrink-0 flex-col xl:min-h-0 xl:flex-1">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden xl:flex-row">
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
               <RunToolbar onStart={() => void onStart()} onStop={onStop} />
               <StatsBar />
               <PromptPanel />
