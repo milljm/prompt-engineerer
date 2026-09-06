@@ -3,8 +3,7 @@
  * a (sometimes messy) Parent reply into a typed revision + test plan.
  */
 
-import type { PromptVersion, ScenarioSpec } from "./types";
-import { SCENARIOS_MAX } from "./types";
+import { SCENARIOS_MAX, type PromptVersion, type ScenarioSpec } from "./types.ts";
 
 /** System prompt given to the Parent LLM every call. */
 export const PARENT_SYSTEM = `You are Parent, a prompt engineer. You write and iterate on a SYSTEM PROMPT for a Child LLM.
@@ -81,7 +80,6 @@ function asScenarios(raw: unknown, minTurns: number): ScenarioSpec[] {
     if (Array.isArray(rec.turns)) {
       for (const t of rec.turns) {
         if (typeof t === "string" && t.trim()) turns.push({ user: t.trim() });
-        else if (t && typeof t !== "object") continue;
         else if (t && typeof t === "object" && typeof (t as { user?: unknown }).user === "string") {
           const u = String((t as { user: string }).user).trim();
           if (u) turns.push({ user: u });
