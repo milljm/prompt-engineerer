@@ -19,6 +19,7 @@ import {
   type ParentReply,
 } from "./parent-protocol";
 import {
+  clearStickyKillFails,
   isOrphanContinue,
   isRunawayName,
   killFocusBlock,
@@ -439,8 +440,7 @@ export async function runEngine(input: EngineInput) {
       parentMs += performance.now() - tJudge;
 
       ledger = mergeLedger(ledger, judged.ledger);
-      const halt = killed || ledgerWantsKillHalt(ledger);
-      if (halt) {
+      if (killed) {
         ledger = mergeLedger(ledger, [
           { name: "Runaway length", verdict: "fail", note: "ENGINE KILL — Child was cut off at the completion cap." },
         ]);
@@ -449,10 +449,12 @@ export async function runEngine(input: EngineInput) {
           pass: false,
           score: judged.score == null ? 3 : Math.min(judged.score, 4),
         };
+      } else {
+        ledger = clearStickyKillFails(ledger, false);
       }
 
       const score = judged.score ?? 0;
-      const passed = !halt && (judged.pass || (judged.score != null && score >= settings.targetScore));
+      const passed = !killed && (judged.pass || (judged.score != null && score >= settings.targetScore));
 
       if (currentRev != null) {
         onEvent({
@@ -523,7 +525,7 @@ export async function runEngine(input: EngineInput) {
             createdAt: Date.now(),
             parentRev: src.rev,
           });
-          pendingScenarios = planNextScenarios(judged.scenarios, lastPlanned, ledger, halt);
+          pendingScenarios = planNextScenarios(judged.scenarios, lastPlanned, ledger, killed);
           continue;
         }
       }
@@ -540,7 +542,7 @@ export async function runEngine(input: EngineInput) {
           parentRev: currentRev,
         });
       }
-      pendingScenarios = planNextScenarios(judged.scenarios, lastPlanned, ledger, halt);
+      pendingScenarios = planNextScenarios(judged.scenarios, lastPlanned, ledger, killed);
     }
 
     onEvent({ type: "done", reason: "max", message: "Iteration budget exhausted." });

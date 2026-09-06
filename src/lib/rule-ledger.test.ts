@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { ENGINE_KILL_MARK } from "./child-cap.ts";
 import {
+  clearStickyKillFails,
   focusScenarios,
   killFocusBlock,
   ledgerWantsKillHalt,
@@ -161,6 +162,37 @@ describe("killFocusBlock", () => {
     const text = killFocusBlock(true, [{ name: "Player agency", verdict: "pass", note: "" }]);
     assert.match(text, /HARD HALT/);
     assert.match(text, /cannot be "pass"/);
+  });
+
+  it("does not hard-halt judging when this round stayed under the cap", () => {
+    const text = killFocusBlock(false, [
+      { name: "Runaway length", verdict: "fail", note: "ENGINE KILL — cut off" },
+    ]);
+    assert.equal(/HARD HALT/.test(text), false);
+    assert.match(text, /THIS round/);
+  });
+});
+
+describe("clearStickyKillFails", () => {
+  it("promotes last round's ENGINE KILL fail after a clean test", () => {
+    const next = clearStickyKillFails(
+      [
+        { name: "Runaway length", verdict: "fail", note: "ENGINE KILL — Child was cut off at the completion cap." },
+        { name: "Player agency", verdict: "pass", note: "" },
+      ],
+      false,
+    );
+    assert.equal(next[0]?.verdict, "pass");
+    assert.equal(next[1]?.verdict, "pass");
+    assert.equal(clearStickyKillFails(next, true)[0]?.verdict, "pass");
+  });
+
+  it("leaves a kill-round fail in place", () => {
+    const next = clearStickyKillFails(
+      [{ name: "Runaway length", verdict: "fail", note: "ENGINE KILL" }],
+      true,
+    );
+    assert.equal(next[0]?.verdict, "fail");
   });
 });
 

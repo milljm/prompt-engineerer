@@ -117,10 +117,30 @@ function hits(name: string, rows: RuleRecord[]): boolean {
 }
 
 export function ledgerWantsKillHalt(ledger: RuleRecord[]): boolean {
-  return ledger.some(
-    (r) =>
-      r.verdict === "fail" &&
-      (isRunawayName(r.name) || /engine kill/i.test(r.note)),
+  return ledger.some((r) => stickyKillFail(r));
+}
+
+/** Fail rows that exist only because of a prior ENGINE KILL stamp. */
+export function stickyKillFail(row: RuleRecord): boolean {
+  if (row.verdict !== "fail") return false;
+  if (/engine kill/i.test(row.note) || /engine kill/i.test(row.name)) return true;
+  return /runaway/i.test(row.name);
+}
+
+/**
+ * A clean round (no kill stamp in THESE transcripts) must not inherit
+ * last round's ENGINE KILL fail.
+ */
+export function clearStickyKillFails(ledger: RuleRecord[], killed: boolean): RuleRecord[] {
+  if (killed) return ledger;
+  return ledger.map((r) =>
+    stickyKillFail(r)
+      ? {
+          ...r,
+          verdict: "pass" as const,
+          note: "Held this round — no ENGINE KILL in these transcripts.",
+        }
+      : r,
   );
 }
 
@@ -200,17 +220,19 @@ export function planNextScenarios(
 
 export function killFocusBlock(killed: boolean, ledger: RuleRecord[]): string {
   const brief = ledgerBrief(ledger);
-  const halt = killed || ledgerWantsKillHalt(ledger);
-  if (!halt) {
+  if (!killed) {
     return (
       `RULE LEDGER — this is binding, not a suggestion.\n` +
       `Do NOT emit a scenario for any PASS row. The engine will drop them if you do.\n` +
       `Only FAIL rows (and brand-new rules not listed) get scenarios this round.\n` +
+      `Verdicts are for THIS round's transcripts only. A prior ENGINE KILL does not ` +
+      `make this round a fail if Child stayed under the cap. If there is no [ENGINE KILL] ` +
+      `in THIS transcript, Runaway length must be PASS.\n` +
       `${brief}`
     );
   }
   return (
-    `HARD HALT: Child was CUT OFF with [ENGINE KILL] or Runaway length is FAIL.\n` +
+    `HARD HALT: Child was CUT OFF with [ENGINE KILL] in THIS round's transcripts.\n` +
     `Do not score truncated prose as success. action cannot be "pass".\n` +
     `Ignore every PASS in the ledger. Do not emit scenarios for those rules.\n` +
     `Your only job this iteration is to stop the runaway: add or tighten a hard stop ` +
