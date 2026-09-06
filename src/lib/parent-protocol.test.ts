@@ -216,16 +216,39 @@ describe("sanitizeTurns", () => {
 
   it("opens a scene instead of 'I'm not following' when there is no seed", () => {
     const open = inCharacterFollowUp("", 0);
-    assert.match(open, /look around|happens next|approaching|What's the move/i);
-    assert.equal(/not following/i.test(open), false);
+    assert.match(open, /look around|Anyone notice|catch her eye|We need to talk/i);
+    assert.equal(/not following|stay in role|harder case/i.test(open), false);
+  });
+
+  it("never coaches Child about role or difficulty", () => {
+    const pads = [
+      inCharacterFollowUp("", 0),
+      inCharacterFollowUp("I walk in.", 0),
+      inCharacterFollowUp("I walk in.", 2),
+    ];
+    for (const line of pads) {
+      assert.equal(isMetaUserTurn(line), false, line);
+      assert.equal(/stay in role|harder case|don't dump|system prompt/i.test(line), false, line);
+    }
+    assert.equal(
+      isMetaUserTurn("Do it again for a slightly harder case. Stay in role."),
+      true,
+    );
+    const cleaned = sanitizeTurns(
+      [{ user: "I push the tavern door." }, { user: "Do it again for a slightly harder case. Stay in role." }],
+      2,
+    );
+    assert.equal(cleaned[0]?.user, "I push the tavern door.");
+    assert.equal(isMetaUserTurn(cleaned[1]?.user ?? ""), false);
+    assert.match(cleaned[1]?.user ?? "", /glance around|step closer|arms folded|And then/);
   });
 });
 
 describe("parseFollowUp", () => {
   it("keeps an in-character next turn", () => {
-    const follow = parseFollowUp({ continue: true, user: "Do it shorter." });
+    const follow = parseFollowUp({ continue: true, user: "I glance at her. \"Go on.\"" });
     assert.equal(follow.continue, true);
-    assert.equal(follow.user, "Do it shorter.");
+    assert.equal(follow.user, "I glance at her. \"Go on.\"");
   });
 
   it("drops a meta follow-up and treats continue=false as stop", () => {

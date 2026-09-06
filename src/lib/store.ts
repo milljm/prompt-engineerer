@@ -202,13 +202,18 @@ export const useEngineStore = create<EngineStore>()(
         };
         const factory = defaultParentPrompts();
         const oldDraft = p.parentPrompts?.draft ?? "";
+        const oldFollow = p.parentPrompts?.followup ?? "";
         const staleParent = !oldDraft || oldDraft.includes("EVERY prior revision");
+        const staleFollow =
+          !oldFollow ||
+          oldFollow.includes("Poke whatever Child just got wrong") ||
+          oldFollow.includes("a real user follow-up, in character");
         return {
           ...p,
           settings: migrateSettings(p.settings),
           parentPrompts: {
             draft: staleParent ? factory.draft : oldDraft,
-            followup: p.parentPrompts?.followup || factory.followup,
+            followup: staleFollow ? factory.followup : oldFollow,
           },
         };
       },
