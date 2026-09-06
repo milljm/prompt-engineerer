@@ -8,6 +8,7 @@ import { useEngineStore } from "@/lib/store";
 import type { LiveLine } from "@/lib/live-transcript";
 import type { IterationRecord, ScenarioTurn } from "@/lib/types";
 import { cn, formatMs } from "@/lib/utils";
+import { Markdown } from "./markdown";
 
 export function RunToolbar({
   onStart,
@@ -217,8 +218,8 @@ function LiveLineView({ line }: { line: LiveLine }) {
   return (
     <div className="py-1.5">
       <Badge variant={isParent ? "parent" : "child"}>{isParent ? "Parent" : "Child"}</Badge>
-      <p className="mt-1 whitespace-pre-wrap font-mono text-xs leading-relaxed text-foreground">
-        {line.text || (isParent ? "" : "…")}
+      <p className="mt-1 text-sm leading-relaxed text-foreground">
+        <Markdown text={line.text || (isParent ? "" : "…")} />
       </p>
     </div>
   );
@@ -242,15 +243,15 @@ function TurnDialogue({ turn, index, of }: { turn: ScenarioTurn; index: number; 
       <TurnRule label={of > 1 ? `Turn ${index} of ${of}` : `Turn ${index}`} />
       <div className="py-1.5">
         <Badge variant="parent">Parent</Badge>
-        <p className="mt-1 whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-foreground">
-          {turn.user}
-        </p>
+        <div className="mt-1 text-sm leading-relaxed text-foreground">
+          <Markdown text={turn.user} />
+        </div>
       </div>
       <div className="py-1.5">
         <Badge variant="child">Child</Badge>
-        <p className="mt-1 whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-muted-foreground">
-          {turn.assistant}
-        </p>
+        <div className="mt-1 text-sm leading-relaxed text-foreground">
+          <Markdown text={turn.assistant} />
+        </div>
       </div>
     </div>
   );
