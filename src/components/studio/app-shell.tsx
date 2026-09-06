@@ -154,7 +154,7 @@ export function AppShell() {
         <DesktopSidebar />
 
         {navOpen ? (
-          <div className="fixed inset-0 z-40 lg:hidden">
+          <div className="fixed inset-0 z-40 md:hidden">
             <button
               type="button"
               className="absolute inset-0 bg-background/70"
@@ -166,7 +166,7 @@ export function AppShell() {
         ) : null}
 
         <div className="flex min-w-0 flex-1 flex-col">
-          <div className="flex items-center gap-2 border-b border-border px-2 py-1 lg:hidden">
+          <div className="flex items-center gap-2 border-b border-border px-2 py-1 md:hidden">
             <Button
               variant="ghost"
               size="icon"
@@ -177,6 +177,11 @@ export function AppShell() {
             </Button>
             <span className="font-display text-lg italic">Engineerer</span>
           </div>
+          {/*
+            3-pane  lg+     (≥1024): sidebar | goal/prompt | bout
+            2-pane  md–lg   (768–1023): sidebar | stacked studio
+            1-pane  <md     (<768): hamburger + stacked studio
+          */}
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
             <div className="flex min-h-0 min-w-0 flex-1 flex-col">
               <RunToolbar onStart={() => void onStart()} onStop={onStop} />
@@ -281,7 +286,7 @@ function DesktopSidebar() {
 
   return (
     <aside
-      className="relative hidden shrink-0 border-r border-border lg:block"
+      className="relative hidden shrink-0 border-r border-border md:block"
       style={{ width: displayWidth }}
     >
       <Sidebar />
