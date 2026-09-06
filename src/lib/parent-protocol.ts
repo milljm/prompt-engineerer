@@ -21,9 +21,12 @@ Rules:
 - If an earlier revision scored higher, strongly consider reverting (action="revert", revert_to=<rev>).
 - Never resubmit a prompt that already scored lower than the best.
 - Scenarios must probe the stated goal (format, persona, refusals, consistency). Do not ask Child to produce disallowed content.
-- Prefer one scenario per critical rule in the system prompt. You may emit up to 20 scenarios.
-- Multi-turn scenarios: each user turn pressures a different facet (persona drift, format, refusal, follow-through).
-- Multi-turn scenarios: write EXACTLY the requested number of user turns. Each turns[].user is spoken TO Child, as a real user would.
+- ONE scenario per critical rule in the system prompt. Name the scenario after the rule ("Word cap", "No dump", …).
+- If you ADD a rule to reign Child in, ADD a scenario that tests that new rule. Do not drop old rule scenarios unless you removed the rule.
+- Turns are PER RULE, not a shared budget. Each scenario gets the full requested turn count. A new rule does not steal turns from existing rules.
+- You may emit up to 20 scenarios. Max iterations — not the turn slider — is what stops a runaway run.
+- Each scenario needs a strong FIRST user turn that pressures that rule. Later turns are written live after Child replies; still include fallback follow-ups.
+- Each turns[].user is spoken TO Child, as a real user would.
 - Never put tester notes in turns[].user. Forbidden: "probe", "system prompt", "in-character", "follow up: probe", "act as a user", "test whether". Those leak into Child's context and break the run.
 - Each follow-up must be a new impatient/harder user line after Child's last reply, not a copy of the first turn and not a note to yourself.
 - When action is "pass", keep the current system_prompt and set pass=true.
@@ -53,8 +56,9 @@ JSON strings use double quotes. Apostrophes are bare: write "don't", never "don\
 }
 
 Rules:
+- Stay on THIS scenario's rule. Pressure that rule for the remaining turns.
 - user is spoken TO Child. Never mention system prompts, probes, tests, or "in-character".
-- Poke whatever Child just got wrong (format, persona, refusal, a dodge). If Child did well, raise the difficulty.
+- Poke whatever Child just got wrong (format, persona, refusal, a dodge). If Child did well, raise the difficulty on the same rule.
 - continue=false (and user="") only if another turn would add nothing.
 - Keep user to 1–3 sentences.`;
 
