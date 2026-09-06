@@ -5,7 +5,7 @@
  * `/api/openai/*` so CORS and API keys stay off the page origin.
  */
 
-import { overTokenCap } from "./child-cap.ts";
+import { overTokenCap, wireMaxTokens } from "./child-cap.ts";
 import { apiUrlIsSelf, isBrowserDirectUrl, isPrivateHostError, normalizeApiBase, openaiHeaders } from "./openai-url.ts";
 import type { ChatMessage, ModelRec } from "./types.ts";
 
@@ -111,7 +111,8 @@ async function readSseStream(
           completion: chunk.usage.completion_tokens ?? 0,
         };
       }
-      if (chunk.choices?.[0]?.finish_reason === "length") killed = true;
+      // finish_reason=length often means reasoning ate the wire budget.
+      // Only kill when the *visible* reply hits the Child cap.
       if (overCap(text, usage, maxTokens)) {
         killed = true;
         await reader.cancel().catch(() => undefined);
@@ -119,7 +120,7 @@ async function readSseStream(
       }
     }
   }
-  return { text: text.trim(), reasoning: reasoning.trim() || undefined, usage, killed };
+  return { text: text.trim(), reasoning: reasoning.trim() || undefined, usage, killed: overCap(text, usage, maxTokens) };
 }
 
 async function readChatResponse(
@@ -138,7 +139,7 @@ async function readChatResponse(
   const usage = body.usage
     ? { prompt: body.usage.prompt_tokens ?? 0, completion: body.usage.completion_tokens ?? 0 }
     : undefined;
-  const killed = body.choices?.[0]?.finish_reason === "length" || overCap(text, usage, maxTokens);
+  const killed = overCap(text, usage, maxTokens);
   return { text, usage, killed };
 }
 
@@ -197,7 +198,7 @@ async function chatDirect(req: ChatRequest): Promise<ChatResult> {
       model: req.model,
       stream: true,
       temperature: req.temperature ?? 0.4,
-      max_tokens: req.maxTokens ?? 1200,
+      max_tokens: wireMaxTokens(req.maxTokens),
       messages: req.messages,
     }),
   });
@@ -218,7 +219,7 @@ async function chatProxied(req: ChatRequest): Promise<ChatResult> {
       apiKey: req.apiKey || undefined,
       model: req.model,
       temperature: req.temperature ?? 0.4,
-      max_tokens: req.maxTokens ?? 1200,
+      max_tokens: wireMaxTokens(req.maxTokens),
       messages: req.messages,
     }),
   });
