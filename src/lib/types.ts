@@ -62,10 +62,22 @@ export type IterationRecord = {
   ms: number;
   score: number | null;
   rationale: string;
-  action: "draft" | "revise" | "revert" | "pass";
+  action: "draft" | "revise" | "revert" | "pass" | "judging";
   scenarios: ScenarioResult[];
   phaseMs: { parent: number; child: number };
 };
+
+/** Insert or replace an iteration by id so a judging stub can fill in later. */
+export function upsertIteration(
+  list: IterationRecord[],
+  record: IterationRecord,
+): IterationRecord[] {
+  const idx = list.findIndex((it) => it.id === record.id);
+  if (idx < 0) return [...list, record];
+  const next = list.slice();
+  next[idx] = record;
+  return next;
+}
 
 export type RunStatus =
   | "idle"

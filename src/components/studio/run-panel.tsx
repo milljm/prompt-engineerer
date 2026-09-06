@@ -91,7 +91,7 @@ export function RunPanel({
         <Stat label="Avg loop" value={iterations.length ? formatMs(avgMs) : "—"} />
       </div>
 
-      {iterations.length > 1 ? <ScoreStrip iterations={iterations} target={settings.targetScore} /> : null}
+      {iterations.length > 0 ? <ScoreStrip iterations={iterations} target={settings.targetScore} /> : null}
 
       <ScrollArea className="min-h-0 flex-1">
         <div className="space-y-3 px-4 py-4 md:px-5">
@@ -250,18 +250,22 @@ function ScoreStrip({
   return (
     <div className="flex items-end gap-1 border-b border-border px-4 py-2 md:px-5">
       {iterations.map((it) => {
+        const pending = it.action === "judging" || it.score == null;
         const score = it.score ?? 0;
-        const h = 8 + score * 3;
-        const hit = score >= target;
+        const h = pending ? 10 : 8 + score * 3;
+        const hit = !pending && score >= target;
         return (
           <div key={it.id} className="flex flex-1 flex-col items-center gap-1">
             <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
-              {it.score ?? "–"}
+              {it.score ?? "…"}
             </span>
             <div
-              className={cn("w-full max-w-8 rounded-sm", hit ? "bg-ok" : "bg-hot/80")}
+              className={cn(
+                "w-full max-w-8 rounded-sm",
+                pending ? "bg-busy/70" : hit ? "bg-ok" : "bg-hot/80",
+              )}
               style={{ height: h }}
-              title={`iter ${it.iteration}: ${it.score ?? "—"}/10 · ${formatMs(it.ms)}`}
+              title={`iter ${it.iteration}: ${it.score ?? "judging"}/10 · ${formatMs(it.ms)}`}
             />
           </div>
         );
@@ -271,6 +275,7 @@ function ScoreStrip({
 }
 
 function IterationCard({ record }: { record: IterationRecord }) {
+  const judging = record.action === "judging";
   const hit = (record.score ?? 0) >= 8 && record.action === "pass";
   return (
     <article className="rounded-xl bg-card p-3 shadow-[var(--shadow-border)]">
@@ -280,6 +285,8 @@ function IterationCard({ record }: { record: IterationRecord }) {
         </p>
         {record.score != null ? (
           <Badge variant={hit ? "ok" : "outline"}>{record.score}/10</Badge>
+        ) : judging ? (
+          <Badge variant="outline">judging</Badge>
         ) : null}
         <Badge variant="outline">{record.action}</Badge>
         <span className="ml-auto font-mono text-[11px] tabular-nums text-muted-foreground">
@@ -287,7 +294,9 @@ function IterationCard({ record }: { record: IterationRecord }) {
         </span>
       </div>
       {record.rationale ? (
-        <p className="mt-2 text-sm leading-relaxed text-foreground">{record.rationale}</p>
+        <p className={cn("mt-2 text-sm leading-relaxed", judging ? "shimmer-text" : "text-foreground")}>
+          {record.rationale}
+        </p>
       ) : null}
       <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
         <span className="font-mono tabular-nums">parent {formatMs(record.phaseMs.parent)}</span>
