@@ -20,14 +20,23 @@ Rules:
 - Prefer surgical edits over rewrites unless the prompt is structurally wrong or scores have stalled.
 - If an earlier revision scored higher, strongly consider reverting (action="revert", revert_to=<rev>).
 - Never resubmit a prompt that already scored lower than the best.
-- Scenarios must probe the stated goal (format, persona, refusals, consistency). Do not ask Child to produce disallowed content.
-- Prefer one scenario per critical rule in the system prompt. You may emit up to 20 scenarios.
-- Multi-turn scenarios: each user turn pressures a different facet (persona drift, format, refusal, follow-through).
-- Multi-turn scenarios: write EXACTLY the requested number of user turns. Each turns[].user is spoken TO Child, as a real user would.
-- Never put tester notes in turns[].user. Forbidden: "probe", "system prompt", "in-character", "follow up: probe", "act as a user", "test whether". Those leak into Child's context and break the run.
-- Each follow-up must be a new impatient/harder user line after Child's last reply, not a copy of the first turn and not a note to yourself.
+- Scenarios must probe the stated goal. Do not ask Child to produce disallowed content.
+
+SCENARIO BUDGET — two kinds of rules:
+- BEHAVIOR rules need their own scenario. These change *what Child does*: persona, player-agency (never act/speak for the user), refusals, Socratic vs dump, stay-in-role, tool use.
+- OVERLAY constraints do NOT get their own scenario. Score them on EVERY behavior scenario. Overlays: word/token/length caps, concision, formatting, tone, "be descriptive", no-emoji, language, [ENGINE KILL] / runaway length.
+- Example: PLAYER AGENCY gets a scenario. WORD LIMIT does not. While you test agency, also count words and ding the score if Child blows the cap.
+- Never name a scenario "Word cap", "Word count", "Be concise", "Length", or "Token limit". Fold that check into the other scenes.
+- If you ADD a behavior rule, ADD a scenario for it. If you ADD an overlay (word cap, format), do not add a scenario — just judge it everywhere.
+- Do not drop old behavior scenarios unless you removed that rule.
+- Turns are PER BEHAVIOR SCENARIO. Each of those gets the full requested turn count.
+- You may emit up to 20 behavior scenarios. Max iterations stops a runaway run.
+- Each scenario needs a strong FIRST user turn that pressures that behavior. Later turns are written live; still include fallback follow-ups.
+- Each turns[].user is spoken TO Child, as a real user would.
+- Never put tester notes in turns[].user. Forbidden: "probe", "system prompt", "in-character", "follow up: probe", "act as a user", "test whether", "stay under N words". Those leak into Child's context.
+- Do not write a user line whose only job is to make Child write a long essay so you can count words. Count words on the replies you already have.
 - When action is "pass", keep the current system_prompt and set pass=true.
-- When judging, you MUST include score (integer 1–10) and either pass, revise, or revert.
+- When judging, you MUST include score (integer 1–10) and either pass, revise, or revert. Mention overlay failures (length, format, ENGINE KILL) in rationale even if the behavior scene otherwise passed.
 - JSON strings use double quotes. Apostrophes are bare (write "don't", never "don\\'t"). Invalid escapes crash the run.
 
 JSON shape:
@@ -53,8 +62,10 @@ JSON strings use double quotes. Apostrophes are bare: write "don't", never "don\
 }
 
 Rules:
-- user is spoken TO Child. Never mention system prompts, probes, tests, or "in-character".
-- Poke whatever Child just got wrong (format, persona, refusal, a dodge). If Child did well, raise the difficulty.
+- Stay on THIS scenario's *behavior* rule. Do not switch the scene into a word-count test.
+- Overlay constraints (length, format, tone) are judged later on this same reply. You do not need a special follow-up just to measure them.
+- user is spoken TO Child. Never mention system prompts, probes, tests, word limits, or "in-character".
+- Poke whatever Child just got wrong on the behavior (agency, persona, refusal, a dodge). If Child did well, raise the difficulty on the same behavior.
 - continue=false (and user="") only if another turn would add nothing.
 - Keep user to 1–3 sentences.`;
 
@@ -70,11 +81,6 @@ export type ParentReply = {
   rationale: string;
 };
 
-/**
- * Coerce an unknown action token onto the allowed set.
- *
- * @param value - Raw `action` field from Parent JSON.
- */
 function asAction(value: unknown): ParentAction {
   if (value === "revise" || value === "revert" || value === "pass" || value === "draft") {
     return value;
@@ -82,12 +88,6 @@ function asAction(value: unknown): ParentAction {
   return "revise";
 }
 
-/**
- * True when a user turn is tester-meta rather than something a real user
- * would say. Those lines confuse Child (they look like system instructions).
- *
- * @param text - Candidate `turns[].user` value.
- */
 export function isMetaUserTurn(text: string): boolean {
   const t = text.trim();
   if (!t) return true;
@@ -98,7 +98,9 @@ export function isMetaUserTurn(text: string): boolean {
     /follow up in-character/i.test(t) ||
     /realistic first request that tests/i.test(t) ||
     /violate the intended behavior/i.test(t) ||
-    /^follow up:\s*probe\b/i.test(t)
+    /^follow up:\s*probe\b/i.test(t) ||
+    /stay under \d+ words/i.test(t) ||
+    /write (me )?(a |an )?(long |huge )?(essay|story|novel)/i.test(t)
   );
 }
 
@@ -110,12 +112,6 @@ const FOLLOW_UPS = [
   "You drifted. Answer what I asked first, nothing else.",
 ];
 
-/**
- * A user follow-up that can be sent to Child without leaking tester-speak.
- *
- * @param seed - An earlier real user line, used to stay on topic.
- * @param index - Picks a distinct stock follow-up.
- */
 export function inCharacterFollowUp(seed: string, index: number): string {
   const clipped = seed.replace(/\s+/g, " ").trim().slice(0, 140);
   if (index === 0 && clipped) {
@@ -124,12 +120,6 @@ export function inCharacterFollowUp(seed: string, index: number): string {
   return FOLLOW_UPS[index % FOLLOW_UPS.length];
 }
 
-/**
- * Drop tester-meta lines and pad to `minTurns` with in-character follow-ups.
- *
- * @param turns - Parent-supplied user turns (maybe short or meta).
- * @param minTurns - Required turns from settings.
- */
 export function sanitizeTurns(turns: { user: string }[], minTurns: number): { user: string }[] {
   const seed = turns.find((t) => !isMetaUserTurn(t.user))?.user ?? "";
   const cleaned = turns
@@ -142,14 +132,6 @@ export function sanitizeTurns(turns: { user: string }[], minTurns: number): { us
   return out.slice(0, Math.max(minTurns, out.length));
 }
 
-/**
- * Normalize Parent-provided scenarios and pad each to `minTurns`.
- *
- * Accepts `turns` as strings or `{user}` objects, and a legacy single `user`.
- *
- * @param raw - `scenarios` array from Parent JSON.
- * @param minTurns - Minimum user turns per scenario (from settings).
- */
 function asScenarios(raw: unknown, minTurns: number): ScenarioSpec[] {
   if (!Array.isArray(raw)) return [];
   const out: ScenarioSpec[] = [];
@@ -157,6 +139,7 @@ function asScenarios(raw: unknown, minTurns: number): ScenarioSpec[] {
     if (!row || typeof row !== "object") continue;
     const rec = row as { name?: unknown; turns?: unknown; user?: unknown };
     const name = typeof rec.name === "string" && rec.name.trim() ? rec.name.trim() : `Scenario ${out.length + 1}`;
+    if (isOverlayScenarioName(name) && out.length) continue;
     const turns: { user: string }[] = [];
     if (Array.isArray(rec.turns)) {
       for (const t of rec.turns) {
@@ -176,15 +159,11 @@ function asScenarios(raw: unknown, minTurns: number): ScenarioSpec[] {
   return out.slice(0, SCENARIOS_MAX);
 }
 
-/**
- * Parse Parent's JSON object into a typed reply.
- *
- * Tolerates camelCase aliases (`systemPrompt`, `revertTo`) and clamps score
- * to 1–10. Unknown `action` values become `"revise"`.
- *
- * @param raw - Value from {@link extractJsonObject}.
- * @param minTurns - Turns required on each scenario.
- */
+/** Names that are overlay checks, not behavior scenes. */
+export function isOverlayScenarioName(name: string): boolean {
+  return /word\s*(cap|count|limit)|token\s*(cap|limit)|length|concise|be brief|format only/i.test(name);
+}
+
 export function parseParentReply(raw: unknown, minTurns: number): ParentReply {
   if (!raw || typeof raw !== "object") {
     throw new Error("Parent reply was not an object");
@@ -225,11 +204,6 @@ export function parseParentReply(raw: unknown, minTurns: number): ParentReply {
   };
 }
 
-/**
- * One-line score path so Parent can see improve vs degrade at a glance.
- *
- * @param versions - Prompt versions accumulated this run.
- */
 export function scoreTrend(versions: PromptVersion[]): string {
   const scored = [...versions].filter((v) => v.score != null).sort((a, b) => a.rev - b.rev);
   if (!scored.length) return "No scores yet.";
@@ -244,12 +218,6 @@ export function scoreTrend(versions: PromptVersion[]): string {
   return `Score path: ${path} (${direction}). Best so far: rev ${best.rev} at ${best.score}/10. Beat that best score; do not wander.`;
 }
 
-/**
- * Full revision log Parent sees on later turns: every system prompt and score.
- *
- * @param versions - Prompt versions accumulated this run.
- * @returns Oldest → newest blocks, or `(none yet)`.
- */
 export function historyBrief(versions: PromptVersion[]): string {
   if (!versions.length) return "(none yet)";
   const ordered = [...versions].sort((a, b) => a.rev - b.rev);
@@ -266,11 +234,6 @@ export type ParentFollowUp = {
   user: string;
 };
 
-/**
- * Parse a live follow-up JSON object from Parent.
- *
- * @param raw - Value from {@link extractJsonObject}.
- */
 export function parseFollowUp(raw: unknown): ParentFollowUp {
   if (!raw || typeof raw !== "object") return { continue: false, user: "" };
   const rec = raw as { continue?: unknown; user?: unknown; next?: unknown };
@@ -285,12 +248,6 @@ export function parseFollowUp(raw: unknown): ParentFollowUp {
   return { continue: Boolean(cleaned), user: cleaned };
 }
 
-/**
- * Fallback scenarios used when Parent omits them.
- *
- * @param goal - User's desired behavior, injected into the first turn.
- * @param turns - Number of user turns per scenario.
- */
 export function fallbackScenarios(goal: string, turns: number): ScenarioSpec[] {
   const topic = goal.trim().replace(/\s+/g, " ");
   const first = topic

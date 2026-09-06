@@ -3,6 +3,7 @@
  * iteration records. Persisted settings live in localStorage via the store.
  */
 
+import { clampChildMaxTokens, CHILD_TOKENS_DEFAULT } from "./child-cap.ts";
 import { SIDEBAR_DEFAULT, clampSidebarWidth } from "./sidebar.ts";
 
 /** A chat model listed by an OpenAI-compatible `/v1/models` endpoint. */
@@ -83,6 +84,7 @@ export type Settings = {
   turns: number;
   maxIterations: number;
   childTemperature: number;
+  childMaxTokens: number;
   sidebarWidth: number;
   sidebarAuto: boolean;
 };
@@ -108,6 +110,7 @@ export const DEFAULT_SETTINGS: Settings = {
   turns: 2,
   maxIterations: 6,
   childTemperature: 0.7,
+  childMaxTokens: CHILD_TOKENS_DEFAULT,
   sidebarWidth: SIDEBAR_DEFAULT,
   sidebarAuto: true,
 };
@@ -131,6 +134,7 @@ export function migrateSettings(raw: LegacySettings | undefined): Settings {
     apiUrl: (src.apiUrl || fromEdge || "").trim(),
     apiKey: src.apiKey ?? "",
     turns: clampTurns(src.turns ?? DEFAULT_SETTINGS.turns),
+    childMaxTokens: clampChildMaxTokens(src.childMaxTokens ?? DEFAULT_SETTINGS.childMaxTokens),
     sidebarWidth: clampSidebarWidth(src.sidebarWidth ?? DEFAULT_SETTINGS.sidebarWidth),
     sidebarAuto: src.sidebarAuto !== false,
   };

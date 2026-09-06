@@ -1,6 +1,6 @@
 /**
  * Pull a JSON object out of a model reply that may include fences, chatter,
- * or illegal escapes (models love `\'`, which JSON rejects).
+ * illegal escapes, or a mid-array cutoff when the model hits max tokens.
  *
  * @param text - Raw model output.
  * @returns Parsed JSON value (typically an object).
@@ -14,7 +14,7 @@ export function extractJsonObject(text: string): unknown {
   const candidate = fence ? fence[1].trim() : trimmed;
 
   const sliced = sliceObject(candidate) ?? candidate;
-  const attempts = [sliced, repairJson(sliced)];
+  const attempts = [sliced, repairJson(sliced), closeTruncatedJson(repairJson(sliced))];
   let last: unknown;
   for (const body of attempts) {
     try {
@@ -30,9 +30,10 @@ export function extractJsonObject(text: string): unknown {
 
 function sliceObject(text: string): string | null {
   const start = text.indexOf("{");
+  if (start < 0) return null;
   const end = text.lastIndexOf("}");
-  if (start >= 0 && end > start) return text.slice(start, end + 1);
-  return null;
+  if (end > start) return text.slice(start, end + 1);
+  return text.slice(start);
 }
 
 /**
@@ -72,4 +73,43 @@ export function repairJson(text: string): string {
   }
   if (escaped) out += "\\";
   return out.replace(/,\s*([}\]])/g, "$1");
+}
+
+/**
+ * Close strings / arrays / objects left open when generation hit the token cap.
+ * Turns `{"scenarios":[{"name":"A"` into a parseable object so earlier
+ * complete scenarios survive.
+ *
+ * @param text - Possibly truncated JSON object.
+ */
+export function closeTruncatedJson(text: string): string {
+  let inString = false;
+  let escaped = false;
+  const stack: string[] = [];
+  for (const ch of text) {
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (ch === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === "{") stack.push("}");
+    else if (ch === "[") stack.push("]");
+    else if (ch === "}" || ch === "]") stack.pop();
+  }
+  let extra = "";
+  if (escaped) extra += " ";
+  if (inString) extra += '"';
+  extra += stack.reverse().join("");
+  return text.replace(/,\s*$/, "") + extra;
 }

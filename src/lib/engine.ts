@@ -6,6 +6,7 @@
  * until the target score, the iteration budget, or Stop.
  */
 
+import { childKillStamp, estimateTokens } from "./child-cap";
 import { extractJsonObject } from "./json";
 import { chat, stopLocal } from "./inference";
 import { isBrowserDirectUrl } from "./openai-url";
@@ -19,6 +20,7 @@ import {
   parseParentReply,
   type ParentReply,
 } from "./parent-protocol";
+import { mergeScenarios } from "./scenarios";
 import type {
   ChatMessage,
   IterationRecord,
@@ -71,7 +73,7 @@ async function parentCall(
       model: settings.parentModel,
       messages,
       temperature: 0.35,
-      maxTokens: 2200,
+      maxTokens: 8192,
       signal,
       onDelta,
     });
@@ -82,7 +84,7 @@ async function parentCall(
     return await run();
   } catch (err) {
     if (err instanceof DOMException && err.name === "AbortError") throw err;
-    return run("Your previous reply was not valid JSON. Return ONLY the JSON object. Apostrophes must be bare: write don't, never don\\'t.");
+    return run("Your previous reply was not valid JSON. Return ONLY the JSON object. Apostrophes must be bare: write don't, never don\\'t. Emit one FIRST user turn per scenario — later turns are written live.");
   }
 }
 
@@ -99,7 +101,7 @@ async function parentFollowUp(
 ): Promise<{ kind: "next"; user: string } | { kind: "stop" } | { kind: "fail" }> {
   const { settings, signal, onEvent } = input;
   onEvent({ type: "parent-delta", text: "" });
-  const user = `GOAL:\n${prompt.goal}\n\nSCENARIO: ${prompt.scenario}\nYou are writing user turn ${prompt.turn} of ${prompt.of}.\n\nCHILD SYSTEM PROMPT:\n${prompt.systemPrompt}\n\nTRANSCRIPT SO FAR:\n${prompt.transcript}\n\nWrite the next user message to Child. JSON only.`;
+  const user = `GOAL:\n${prompt.goal}\n\nSCENARIO: ${prompt.scenario}\nYou are writing user turn ${prompt.turn} of ${prompt.of}. Stay on this rule.\n\nCHILD SYSTEM PROMPT:\n${prompt.systemPrompt}\n\nTRANSCRIPT SO FAR:\n${prompt.transcript}\n\nWrite the next user message to Child. JSON only.`;
   try {
     const result = await chat({
       apiUrl: settings.apiUrl,
@@ -201,11 +203,18 @@ async function runScenarios(
         model: settings.childModel,
         messages: history,
         temperature: settings.childTemperature,
-        maxTokens: 900,
+        maxTokens: settings.childMaxTokens,
         signal,
         onDelta: (text) => onEvent({ type: "live", event: { type: "child-delta", text } }),
       });
-      const assistant = reply.text || "(empty reply)";
+      let assistant = reply.text || "(empty reply)";
+      const used = reply.usage?.completion ?? estimateTokens(assistant);
+      if (reply.killed || used >= settings.childMaxTokens) {
+        const stamp = childKillStamp(settings.childMaxTokens, used);
+        assistant += stamp;
+        onEvent({ type: "live", event: { type: "child-delta", text: stamp } });
+        void stopLocal(settings.apiUrl, settings.childModel);
+      }
       history.push({ role: "assistant", content: assistant });
       turns.push({ user: userText, assistant, ms: performance.now() - t0 });
     }
@@ -228,20 +237,25 @@ function transcriptBlock(results: ScenarioResult[]): string {
     .join("\n\n");
 }
 
-/**
- * Run the Parent → Child → judge loop until pass, max iterations, stop, or error.
- *
- * Events are pushed through `onEvent` so the UI can stream deltas, versions,
- * and scores. Aborting `signal` is the Stop button.
- *
- * @param input - Goal, current versions, settings, abort signal, event sink.
- */
+function emptyJudge(prev: ScenarioSpec[], reason: string): ParentReply {
+  return {
+    action: "revise",
+    revertTo: null,
+    systemPrompt: "",
+    scenarios: prev,
+    score: null,
+    pass: false,
+    rationale: reason,
+  };
+}
+
 export async function runEngine(input: EngineInput) {
   const { settings, signal, onEvent, goal } = input;
   let versions = [...input.versions];
   let currentRev = input.currentRev;
   let nextRev = (versions.at(-1)?.rev ?? 0) + 1;
   let pendingScenarios: ScenarioSpec[] | null = null;
+  let lastPlanned: ScenarioSpec[] = [];
 
   const emitVersion = (version: PromptVersion) => {
     versions = [...versions, version];
@@ -278,7 +292,7 @@ export async function runEngine(input: EngineInput) {
       if (!currentOf()?.prompt) {
         reply = await parentCall(
           input,
-          `GOAL:\n${goal}\n\nNo system prompt yet. Draft one and ${settings.turns}-turn test scenarios.`,
+          `GOAL:\n${goal}\n\nNo system prompt yet. Draft one. Then one scenario per critical rule; each rule gets ${settings.turns} turns. Only the FIRST user turn per scenario is required.`,
           (text) => onEvent({ type: "parent-delta", text }),
         );
         if (!reply.systemPrompt.trim()) {
@@ -293,15 +307,15 @@ export async function runEngine(input: EngineInput) {
           createdAt: Date.now(),
           parentRev: null,
         });
-        pendingScenarios = reply.scenarios;
+        pendingScenarios = mergeScenarios(reply.scenarios, lastPlanned);
       } else if (!pendingScenarios?.length) {
         const cur = currentOf();
         reply = await parentCall(
           input,
-          `GOAL:\n${goal}\n\nCURRENT SYSTEM PROMPT (rev ${cur?.rev}):\n${cur?.prompt ?? ""}\n\nREVISION LOG (full prompts + scores, oldest → newest):\n${historyBrief(versions)}\n\nDesign ${settings.turns}-turn test scenarios for this prompt. action should be "draft". Keep system_prompt unless it is clearly broken or scores have stalled.`,
+          `GOAL:\n${goal}\n\nCURRENT SYSTEM PROMPT (rev ${cur?.rev}):\n${cur?.prompt ?? ""}\n\nREVISION LOG (full prompts + scores, oldest → newest):\n${historyBrief(versions)}\n\nDesign one scenario per critical rule. Each rule gets ${settings.turns} turns. If you added a rule, add a scenario for it. Keep prior rule tests. action should be "draft". Keep system_prompt unless it is clearly broken or scores have stalled. Only the FIRST user turn per scenario is required.`,
           (text) => onEvent({ type: "parent-delta", text }),
         );
-        pendingScenarios = reply.scenarios;
+        pendingScenarios = mergeScenarios(reply.scenarios, lastPlanned);
         if (reply.systemPrompt.trim() && reply.systemPrompt.trim() !== cur?.prompt) {
           emitVersion({
             rev: nextRev,
@@ -325,6 +339,7 @@ export async function runEngine(input: EngineInput) {
           ? pendingScenarios
           : fallbackScenarios(goal, settings.turns);
       pendingScenarios = null;
+      lastPlanned = scenarios;
 
       const tChild = performance.now();
       const results = await runScenarios(input, promptText, scenarios, i);
@@ -334,22 +349,31 @@ export async function runEngine(input: EngineInput) {
       onEvent({ type: "phase", phase: "Parent judging…", iteration: i });
       onEvent({ type: "parent-delta", text: "" });
       const tJudge = performance.now();
-      const judged = await parentCall(
-        input,
-        `GOAL:\n${goal}\n\nCURRENT SYSTEM PROMPT (rev ${currentRev}):\n${promptText}\n\nREVISION LOG (full prompts + scores, oldest → newest). Use it to see whether you are improving or degrading:\n${historyBrief(versions)}\n\nCHILD TRANSCRIPTS:\n${transcriptBlock(results)}\n\nScore 1–10. If score >= ${settings.targetScore}, action="pass". If this score is below the best in the log, prefer action="revert" to that rev or a real rewrite — not a tiny edit of a loser. Otherwise revise the FULL system prompt. Include the next test scenarios.`,
-        (text) => onEvent({ type: "parent-delta", text }),
-      );
+      let judged: ParentReply;
+      try {
+        judged = await parentCall(
+          input,
+          `GOAL:\n${goal}\n\nCURRENT SYSTEM PROMPT (rev ${currentRev}):\n${promptText}\n\nREVISION LOG (full prompts + scores, oldest → newest). Use it to see whether you are improving or degrading:\n${historyBrief(versions)}\n\nCHILD TRANSCRIPTS:\n${transcriptBlock(results)}\n\nIf any Child turn contains [ENGINE KILL], that is a hard failure: Child ran away past the completion cap. Do not pass. Add or tighten a rule that stops the runaway.\n\nScore 1–10. If score >= ${settings.targetScore}, action="pass". If this score is below the best in the log, prefer action="revert" to that rev or a real rewrite — not a tiny edit of a loser. Otherwise revise the FULL system prompt. Include one scenario per critical rule (keep old rule tests; add a scenario for any new rule). Only the FIRST user turn per scenario is required.`,
+          (text) => onEvent({ type: "parent-delta", text }),
+        );
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") throw err;
+        judged = emptyJudge(
+          lastPlanned,
+          err instanceof Error ? err.message : "Parent JSON failed; keeping prior scenarios",
+        );
+      }
       parentMs += performance.now() - tJudge;
 
       const score = judged.score ?? 0;
-      const passed = judged.pass || score >= settings.targetScore;
+      const passed = judged.pass || (judged.score != null && score >= settings.targetScore);
 
       if (currentRev != null) {
         onEvent({
           type: "version-update",
           rev: currentRev,
           patch: {
-            score,
+            score: judged.score,
             status: passed ? "champion" : "tested",
             rationale: judged.rationale || reply?.rationale || "",
           },
@@ -358,7 +382,7 @@ export async function runEngine(input: EngineInput) {
           v.rev === currentRev
             ? {
                 ...v,
-                score,
+                score: judged.score,
                 status: passed ? "champion" : "tested",
                 rationale: judged.rationale || v.rationale,
               }
@@ -374,7 +398,7 @@ export async function runEngine(input: EngineInput) {
         rev: currentRev ?? 0,
         startedAt: Date.now(),
         ms: performance.now() - iterStarted,
-        score,
+        score: judged.score,
         rationale: judged.rationale,
         action: passed ? "pass" : judged.action,
         scenarios: results,
@@ -412,7 +436,7 @@ export async function runEngine(input: EngineInput) {
             createdAt: Date.now(),
             parentRev: src.rev,
           });
-          pendingScenarios = judged.scenarios;
+          pendingScenarios = mergeScenarios(judged.scenarios, lastPlanned);
           continue;
         }
       }
@@ -429,7 +453,7 @@ export async function runEngine(input: EngineInput) {
           parentRev: currentRev,
         });
       }
-      pendingScenarios = judged.scenarios;
+      pendingScenarios = mergeScenarios(judged.scenarios, lastPlanned);
     }
 
     onEvent({ type: "done", reason: "max", message: "Iteration budget exhausted." });

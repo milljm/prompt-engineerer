@@ -101,6 +101,12 @@ export function AppShell() {
             break;
           case "iteration":
             store.addIteration(event.record);
+            if (event.record.rev && event.record.score != null) {
+              store.updateVersion(event.record.rev, {
+                score: event.record.score,
+                status: event.record.action === "pass" ? "champion" : "tested",
+              });
+            }
             break;
           case "done":
             store.setRun({

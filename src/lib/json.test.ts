@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { extractJsonObject } from "./json.ts";
+import { closeTruncatedJson, extractJsonObject } from "./json.ts";
 
 describe("extractJsonObject", () => {
   it("parses a bare object", () => {
@@ -29,5 +29,23 @@ describe("extractJsonObject", () => {
     const raw = `{"rationale":"Child didn't hold the persona."}`;
     const illegal = `{"rationale":"Child didn\\'t hold the persona."}`;
     assert.deepEqual(extractJsonObject(illegal), extractJsonObject(raw));
+  });
+
+  it("closes a truncated scenarios array", () => {
+    const raw =
+      '{"action":"revise","system_prompt":"Be terse.","scenarios":[{"name":"Word cap","turns":[{"user":"Write a lot"}]},{"name":"Trust"';
+    const parsed = extractJsonObject(raw) as {
+      action: string;
+      scenarios: { name: string }[];
+    };
+    assert.equal(parsed.action, "revise");
+    assert.equal(parsed.scenarios[0]?.name, "Word cap");
+  });
+});
+
+describe("closeTruncatedJson", () => {
+  it("adds the missing brackets", () => {
+    const closed = closeTruncatedJson('{"scenarios":[{"name":"A"');
+    assert.doesNotThrow(() => JSON.parse(closed));
   });
 });
