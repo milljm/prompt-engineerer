@@ -4,6 +4,7 @@
  */
 
 import type { PromptVersion, ScenarioSpec } from "./types";
+import { SCENARIOS_MAX } from "./types";
 
 /** System prompt given to the Parent LLM every call. */
 export const PARENT_SYSTEM = `You are Parent, a prompt engineer. You write and iterate on a SYSTEM PROMPT for a Child LLM.
@@ -21,6 +22,7 @@ Rules:
 - If an earlier revision scored higher, strongly consider reverting (action="revert", revert_to=<rev>).
 - Never resubmit a prompt that already scored lower than the best.
 - Scenarios must probe the stated goal (format, persona, refusals, consistency). Do not ask Child to produce disallowed content.
+- Prefer one scenario per critical rule in the system prompt. You may emit up to 20 scenarios.
 - Multi-turn scenarios: each user turn pressures a different facet (persona drift, format, refusal, follow-through).
 - When action is "pass", keep the current system_prompt and set pass=true.
 - When judging, you MUST include score (integer 1–10) and either pass, revise, or revert.
@@ -79,6 +81,7 @@ function asScenarios(raw: unknown, minTurns: number): ScenarioSpec[] {
     if (Array.isArray(rec.turns)) {
       for (const t of rec.turns) {
         if (typeof t === "string" && t.trim()) turns.push({ user: t.trim() });
+        else if (t && typeof t !== "object") continue;
         else if (t && typeof t === "object" && typeof (t as { user?: unknown }).user === "string") {
           const u = String((t as { user: string }).user).trim();
           if (u) turns.push({ user: u });
@@ -96,7 +99,7 @@ function asScenarios(raw: unknown, minTurns: number): ScenarioSpec[] {
       out.push({ name, turns: turns.slice(0, Math.max(minTurns, turns.length)) });
     }
   }
-  return out.slice(0, 4);
+  return out.slice(0, SCENARIOS_MAX);
 }
 
 /**
