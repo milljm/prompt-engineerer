@@ -18,6 +18,22 @@ export function estimateTokens(text: string): number {
 }
 
 /**
+ * Some local servers report prompt or session totals as completion_tokens.
+ * Only trust usage when it is in the same ballpark as the visible text.
+ */
+export function completionUsed(text: string, usage?: { completion: number }): number {
+  const fromText = estimateTokens(text);
+  if (!usage || !Number.isFinite(usage.completion) || usage.completion <= 0) return fromText;
+  if (usage.completion > fromText * 3 + 24) return fromText;
+  return Math.max(fromText, Math.round(usage.completion));
+}
+
+export function overTokenCap(text: string, usage: { completion: number } | undefined, maxTokens?: number): boolean {
+  if (!maxTokens) return false;
+  return completionUsed(text, usage) >= maxTokens;
+}
+
+/**
  * Clamp the user-entered Child completion cap.
  *
  * @param n - Raw value from settings or an input.
