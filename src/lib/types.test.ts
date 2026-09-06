@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { DEFAULT_SETTINGS, TURNS_MAX, clampTurns, migrateSettings, upsertIteration } from "./types.ts";
+import { DEFAULT_SETTINGS, ITERATIONS_MAX, TURNS_MAX, clampIterations, clampTurns, migrateSettings, upsertIteration } from "./types.ts";
 
 describe("migrateSettings", () => {
   it("returns defaults for empty storage", () => {
@@ -42,6 +42,12 @@ describe("migrateSettings", () => {
   it("clamps turns into 1–20", () => {
     assert.equal(migrateSettings({ turns: 99 }).turns, TURNS_MAX);
     assert.equal(migrateSettings({ turns: 0 }).turns, 1);
+  });
+
+  it("clamps max iterations into 1–100", () => {
+    assert.equal(migrateSettings({ maxIterations: 400 }).maxIterations, ITERATIONS_MAX);
+    assert.equal(migrateSettings({ maxIterations: 0 }).maxIterations, 1);
+    assert.equal(clampIterations(100), 100);
   });
 
   it("clamps the Child token cap", () => {

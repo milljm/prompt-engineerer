@@ -5,7 +5,9 @@ import {
   ENGINE_KILL_MARK,
   childKillStamp,
   clampChildMaxTokens,
+  completionUsed,
   estimateTokens,
+  overTokenCap,
   stripKillStamp,
   wasKilled,
 } from "./child-cap.ts";
@@ -43,5 +45,15 @@ describe("stripKillStamp", () => {
     const stamped = `${body}${childKillStamp(600, 600)}`;
     assert.equal(stripKillStamp(stamped), body);
     assert.equal(stripKillStamp(body), body);
+  });
+});
+
+describe("completionUsed", () => {
+  it("ignores a server total that dwarfs the visible reply", () => {
+    const short = "I push open the heavy oak door.";
+    const fromText = estimateTokens(short);
+    assert.equal(completionUsed(short, { completion: 200 }), fromText);
+    assert.equal(overTokenCap(short, { completion: 200 }, 200), false);
+    assert.equal(overTokenCap("a".repeat(900), undefined, 200), true);
   });
 });
