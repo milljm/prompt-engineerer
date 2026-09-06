@@ -5,6 +5,7 @@
  * `/api/openai/*` so CORS and API keys stay off the page origin.
  */
 
+import { estimateTokens } from "./child-cap.ts";
 import { apiUrlIsSelf, isBrowserDirectUrl, isPrivateHostError, normalizeApiBase, openaiHeaders } from "./openai-url.ts";
 import type { ChatMessage, ModelRec } from "./types.ts";
 
@@ -12,6 +13,7 @@ export type ChatResult = {
   text: string;
   reasoning?: string;
   usage?: { prompt: number; completion: number };
+  killed?: boolean;
 };
 
 export type ChatRequest = {
@@ -60,10 +62,17 @@ function contentFromMessage(payload: DeltaPayload): string {
   return typeof content === "string" ? content : "";
 }
 
+function overCap(text: string, usage: ChatResult["usage"], maxTokens?: number): boolean {
+  if (!maxTokens) return false;
+  if (usage && usage.completion >= maxTokens) return true;
+  return estimateTokens(text) >= maxTokens;
+}
+
 async function readSseStream(
   res: Response,
   signal: AbortSignal | undefined,
   onDelta?: (text: string) => void,
+  maxTokens?: number,
 ): Promise<ChatResult> {
   if (!res.body) throw new Error("Empty stream");
   const reader = res.body.getReader();
@@ -72,6 +81,7 @@ async function readSseStream(
   let text = "";
   let reasoning = "";
   let usage: ChatResult["usage"];
+  let killed = false;
 
   while (true) {
     if (signal?.aborted) {
@@ -103,29 +113,35 @@ async function readSseStream(
           completion: chunk.usage.completion_tokens ?? 0,
         };
       }
+      if (chunk.choices?.[0]?.finish_reason === "length") killed = true;
+      if (overCap(text, usage, maxTokens)) {
+        killed = true;
+        await reader.cancel().catch(() => undefined);
+        return { text: text.trim(), reasoning: reasoning.trim() || undefined, usage, killed: true };
+      }
     }
   }
-  return { text: text.trim(), reasoning: reasoning.trim() || undefined, usage };
+  return { text: text.trim(), reasoning: reasoning.trim() || undefined, usage, killed };
 }
 
 async function readChatResponse(
   res: Response,
   signal: AbortSignal | undefined,
   onDelta?: (text: string) => void,
+  maxTokens?: number,
 ): Promise<ChatResult> {
   const ct = res.headers.get("content-type") || "";
   if (ct.includes("text/event-stream") || ct.includes("text/plain")) {
-    return readSseStream(res, signal, onDelta);
+    return readSseStream(res, signal, onDelta, maxTokens);
   }
   const body = (await res.json()) as DeltaPayload;
   const text = contentFromMessage(body).trim();
   if (text) onDelta?.(text);
-  return {
-    text,
-    usage: body.usage
-      ? { prompt: body.usage.prompt_tokens ?? 0, completion: body.usage.completion_tokens ?? 0 }
-      : undefined,
-  };
+  const usage = body.usage
+    ? { prompt: body.usage.prompt_tokens ?? 0, completion: body.usage.completion_tokens ?? 0 }
+    : undefined;
+  const killed = body.choices?.[0]?.finish_reason === "length" || overCap(text, usage, maxTokens);
+  return { text, usage, killed };
 }
 
 function throwHttp(res: Response, body: string, code?: string) {
@@ -152,10 +168,6 @@ function parseProxyFailure(raw: string): { message: string; code?: string } {
 const DIRECT_HINT =
   "This API is on a private network, so your browser called it directly. Enable CORS on that server, or use http://127.0.0.1:<port>/v1.";
 
-/**
- * Public-looking hosts go through the proxy; if DNS says they are actually
- * LAN/Tailscale/etc, retry from the browser instead of failing.
- */
 async function viaProxyOrDirect<T>(
   apiUrl: string,
   direct: () => Promise<T>,
@@ -177,7 +189,6 @@ async function viaProxyOrDirect<T>(
   }
 }
 
-
 async function chatDirect(req: ChatRequest): Promise<ChatResult> {
   const base = normalizeApiBase(req.apiUrl);
   const res = await fetch(`${base}/chat/completions`, {
@@ -196,7 +207,7 @@ async function chatDirect(req: ChatRequest): Promise<ChatResult> {
     const err = await res.text().catch(() => "");
     throwHttp(res, err);
   }
-  return readChatResponse(res, req.signal, req.onDelta);
+  return readChatResponse(res, req.signal, req.onDelta, req.maxTokens);
 }
 
 async function chatProxied(req: ChatRequest): Promise<ChatResult> {
@@ -218,7 +229,7 @@ async function chatProxied(req: ChatRequest): Promise<ChatResult> {
     const parsed = parseProxyFailure(err);
     throwHttp(res, parsed.message, parsed.code);
   }
-  return readChatResponse(res, req.signal, req.onDelta);
+  return readChatResponse(res, req.signal, req.onDelta, req.maxTokens);
 }
 
 /**
@@ -264,14 +275,6 @@ export async function stopLocal(apiUrl: string, model?: string) {
   }
 }
 
-/**
- * Map an OpenAI `/v1/models` body onto {@link ModelRec} rows.
- *
- * Image, audio, and embedding ids are dropped so Parent/Child only see chat
- * models.
- *
- * @param body - OpenAI `{data: [...]}` or a `{models: [...]}` alias.
- */
 export function parseModelRows(body: {
   data?: { id?: string; owned_by?: string; context_length?: number; max_model_len?: number }[];
   models?: { id?: string; owned_by?: string; context_length?: number; max_model_len?: number }[];
@@ -322,12 +325,6 @@ async function listProxied(apiUrl: string, apiKey?: string): Promise<ModelRec[]>
   return parseModelRows({ models: body.models });
 }
 
-/**
- * List chat models from an OpenAI-compatible server.
- *
- * @param apiUrl - User-entered API address.
- * @param apiKey - Optional bearer token.
- */
 export async function listModels(apiUrl: string, apiKey?: string): Promise<ModelRec[]> {
   if (!apiUrl.trim()) throw new Error("Enter an OpenAI-compatible API address");
   if (apiUrlIsSelf(apiUrl)) {
@@ -347,11 +344,6 @@ export async function listModels(apiUrl: string, apiKey?: string): Promise<Model
   }
 }
 
-/**
- * Pick a capable parent and a distinct (often smaller) child from a catalog.
- *
- * @param models - Models currently listed by the API.
- */
 export function pickDefaultModels(models: ModelRec[]): { parent: string; child: string } {
   if (!models.length) return { parent: "", child: "" };
   const preferParent = (id: string) =>
@@ -366,11 +358,6 @@ export function pickDefaultModels(models: ModelRec[]): { parent: string; child: 
   return { parent: parent.id, child: child.id };
 }
 
-/**
- * Deduplicate models by id, keeping first occurrence.
- *
- * @param models - Models returned by the API.
- */
 export function uniqueModels(models: ModelRec[]): ModelRec[] {
   const seen = new Set<string>();
   const out: ModelRec[] = [];
