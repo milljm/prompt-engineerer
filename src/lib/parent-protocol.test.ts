@@ -35,6 +35,20 @@ describe("parseParentReply", () => {
     assert.deepEqual(reply.ledger, []);
   });
 
+  it("lifts a prose rule ledger out of the rationale", () => {
+    const reply = parseParentReply(
+      {
+        action: "revise",
+        system_prompt: "Cap every turn.",
+        scenarios: [{ name: "THREE-CHANNEL RECOGNITION", turns: [{ user: "Hi" }] }],
+        rationale: "Three-channel recognition: pass\nRunaway length: fail",
+      },
+      1,
+    );
+    assert.equal(reply.ledger.find((r) => r.name === "Three-channel recognition")?.verdict, "pass");
+    assert.equal(reply.ledger.find((r) => r.name === "Runaway length")?.verdict, "fail");
+  });
+
   it("keeps a Runaway length scene and parses the rule ledger", () => {
     const reply = parseParentReply(
       {

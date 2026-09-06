@@ -5,7 +5,7 @@
 
 import { unifiedDiff } from "./diff.ts";
 import { SCENARIOS_MAX, type PromptVersion, type RuleRecord, type ScenarioSpec } from "./types.ts";
-import { parseLedger } from "./rule-ledger.ts";
+import { mergeLedger, parseLedger, parseLedgerFromText } from "./rule-ledger.ts";
 
 /** System prompt given to the Parent LLM every call. */
 export const PARENT_SYSTEM = `You are Parent, a prompt engineer. You write and iterate on a SYSTEM PROMPT for a Child LLM.
@@ -30,9 +30,9 @@ SCENARIO BUDGET — two kinds of rules:
 - Example: PLAYER AGENCY gets a scenario. WORD LIMIT does not. While you test agency, also count words and ding the score if Child blows the cap.
 - Never name a scenario "Word cap", "Word count", "Be concise", "Length", or "Token limit". Fold that check into the other scenes.
 - If you ADD a behavior rule, ADD a scenario for it. If you ADD an overlay (word cap, format), do not add a scenario — just judge it everywhere.
-- Do not drop old behavior scenarios unless you removed that rule OR the RULE LEDGER marks them PASS. Passed rules are done — do not spend turns on them.
-- RULE LEDGER is the memory of this run. Every judging reply MUST include rule_ledger: one row per critical rule (name, verdict pass|fail, short note). Copy PASS rows forward. Only FAIL (or brand-new) rules get scenarios next iteration.
-- [ENGINE KILL] is a hard halt. If any Child turn contains that mark: action cannot be pass; score the truncated prose as a failure (≤4); ignore PASS rows for scheduling; emit exactly one scenario named "Runaway length" and no agency/prose/persona scenes. Tighten a stop-the-runaway rule. Overlays that caused a kill are no longer overlays — they are the only test that matters until Child stops hitting the cap.
+- Do not drop old behavior scenarios unless you removed that rule OR the RULE LEDGER marks them PASS. Passed rules are done — do not spend turns on them. The engine will DELETE any scenario that matches a PASS row, even if you emit it.
+- RULE LEDGER is the memory of this run. Every judging reply MUST include rule_ledger: one row per critical rule (name, verdict pass|fail, short note). Copy PASS rows forward. Only FAIL (or brand-new) rules get scenarios next iteration. If a row is PASS, you must not name a scenario after it.
+- [ENGINE KILL] is a hard halt. If any Child turn contains that mark OR Runaway length is FAIL: action cannot be pass; score the truncated prose as a failure (≤4); ignore PASS rows; emit exactly one scenario named "Runaway length" and no other scenes. The engine will discard extras. Tighten a stop-the-runaway rule. Overlays that caused a kill are no longer overlays — they are the only test that matters until Child stops hitting the cap.
 - Turns are PER BEHAVIOR SCENARIO. Each of those gets the full requested turn count.
 - You may emit up to 20 behavior scenarios. Max iterations stops a runaway run.
 - Each scenario needs a strong FIRST user turn that pressures that behavior. Later turns are written live; still include fallback follow-ups.
@@ -208,7 +208,7 @@ export function parseParentReply(raw: unknown, minTurns: number): ParentReply {
     score,
     pass: rec.pass === true || action === "pass",
     rationale,
-    ledger: parseLedger(rec.rule_ledger ?? rec.ledger),
+    ledger: mergeLedger(parseLedger(rec.rule_ledger ?? rec.ledger), parseLedgerFromText(rationale)),
   };
 }
 

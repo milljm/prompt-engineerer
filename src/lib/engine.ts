@@ -19,12 +19,12 @@ import {
   type ParentReply,
 } from "./parent-protocol";
 import {
-  focusScenarios,
   killFocusBlock,
+  ledgerWantsKillHalt,
   mergeLedger,
+  planNextScenarios,
   transcriptsKilled,
 } from "./rule-ledger";
-import { mergeScenarios } from "./scenarios";
 import type {
   ChatMessage,
   IterationRecord,
@@ -334,15 +334,16 @@ export async function runEngine(input: EngineInput) {
           createdAt: Date.now(),
           parentRev: null,
         });
-        pendingScenarios = focusScenarios(mergeScenarios(reply.scenarios, lastPlanned), ledger, false);
+        pendingScenarios = planNextScenarios(reply.scenarios, lastPlanned, ledger, false);
       } else if (!pendingScenarios?.length) {
         const cur = currentOf();
+        const halt = ledgerWantsKillHalt(ledger);
         reply = await parentCall(
           input,
-          `GOAL:\n${goal}\n\nCURRENT SYSTEM PROMPT (rev ${cur?.rev}):\n${cur?.prompt ?? ""}\n\nREVISION LOG (unified diffs + scores, oldest → newest):\n${historyBrief(versions)}\n\n${killFocusBlock(false, ledger)}\n\nDesign scenarios only for FAIL or new rules. Each of those gets ${settings.turns} turns. action should be "draft". Keep system_prompt unless it is clearly broken or scores have stalled. Only the FIRST user turn per scenario is required.`,
+          `GOAL:\n${goal}\n\nCURRENT SYSTEM PROMPT (rev ${cur?.rev}):\n${cur?.prompt ?? ""}\n\nREVISION LOG (unified diffs + scores, oldest → newest):\n${historyBrief(versions)}\n\n${killFocusBlock(halt, ledger)}\n\nDesign scenarios only for FAIL or new rules. Each of those gets ${settings.turns} turns. action should be "draft". Keep system_prompt unless it is clearly broken or scores have stalled. Only the FIRST user turn per scenario is required.`,
           (text) => onEvent({ type: "parent-delta", text }),
         );
-        pendingScenarios = focusScenarios(mergeScenarios(reply.scenarios, lastPlanned), ledger, false);
+        pendingScenarios = planNextScenarios(reply.scenarios, lastPlanned, ledger, halt);
         if (reply.systemPrompt.trim() && reply.systemPrompt.trim() !== cur?.prompt) {
           emitVersion({
             rev: nextRev,
@@ -413,7 +414,8 @@ export async function runEngine(input: EngineInput) {
       parentMs += performance.now() - tJudge;
 
       ledger = mergeLedger(ledger, judged.ledger);
-      if (killed) {
+      const halt = killed || ledgerWantsKillHalt(ledger);
+      if (halt) {
         ledger = mergeLedger(ledger, [
           { name: "Runaway length", verdict: "fail", note: "ENGINE KILL — Child was cut off at the completion cap." },
         ]);
@@ -425,7 +427,7 @@ export async function runEngine(input: EngineInput) {
       }
 
       const score = judged.score ?? 0;
-      const passed = !killed && (judged.pass || (judged.score != null && score >= settings.targetScore));
+      const passed = !halt && (judged.pass || (judged.score != null && score >= settings.targetScore));
 
       if (currentRev != null) {
         onEvent({
@@ -496,7 +498,7 @@ export async function runEngine(input: EngineInput) {
             createdAt: Date.now(),
             parentRev: src.rev,
           });
-          pendingScenarios = focusScenarios(mergeScenarios(judged.scenarios, lastPlanned), ledger, killed);
+          pendingScenarios = planNextScenarios(judged.scenarios, lastPlanned, ledger, halt);
           continue;
         }
       }
@@ -513,7 +515,7 @@ export async function runEngine(input: EngineInput) {
           parentRev: currentRev,
         });
       }
-      pendingScenarios = focusScenarios(mergeScenarios(judged.scenarios, lastPlanned), ledger, killed);
+      pendingScenarios = planNextScenarios(judged.scenarios, lastPlanned, ledger, halt);
     }
 
     onEvent({ type: "done", reason: "max", message: "Iteration budget exhausted." });
