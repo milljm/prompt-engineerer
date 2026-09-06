@@ -6,6 +6,7 @@
  * until the target score, the iteration budget, or Stop.
  */
 
+import { childKillStamp, estimateTokens } from "./child-cap";
 import { extractJsonObject } from "./json";
 import { chat, stopLocal } from "./inference";
 import { isBrowserDirectUrl } from "./openai-url";
@@ -202,11 +203,18 @@ async function runScenarios(
         model: settings.childModel,
         messages: history,
         temperature: settings.childTemperature,
-        maxTokens: 900,
+        maxTokens: settings.childMaxTokens,
         signal,
         onDelta: (text) => onEvent({ type: "live", event: { type: "child-delta", text } }),
       });
-      const assistant = reply.text || "(empty reply)";
+      let assistant = reply.text || "(empty reply)";
+      const used = reply.usage?.completion ?? estimateTokens(assistant);
+      if (reply.killed || used >= settings.childMaxTokens) {
+        const stamp = childKillStamp(settings.childMaxTokens, used);
+        assistant += stamp;
+        onEvent({ type: "live", event: { type: "child-delta", text: stamp } });
+        void stopLocal(settings.apiUrl, settings.childModel);
+      }
       history.push({ role: "assistant", content: assistant });
       turns.push({ user: userText, assistant, ms: performance.now() - t0 });
     }
@@ -241,14 +249,6 @@ function emptyJudge(prev: ScenarioSpec[], reason: string): ParentReply {
   };
 }
 
-/**
- * Run the Parent → Child → judge loop until pass, max iterations, stop, or error.
- *
- * Events are pushed through `onEvent` so the UI can stream deltas, versions,
- * and scores. Aborting `signal` is the Stop button.
- *
- * @param input - Goal, current versions, settings, abort signal, event sink.
- */
 export async function runEngine(input: EngineInput) {
   const { settings, signal, onEvent, goal } = input;
   let versions = [...input.versions];
@@ -353,7 +353,7 @@ export async function runEngine(input: EngineInput) {
       try {
         judged = await parentCall(
           input,
-          `GOAL:\n${goal}\n\nCURRENT SYSTEM PROMPT (rev ${currentRev}):\n${promptText}\n\nREVISION LOG (full prompts + scores, oldest → newest). Use it to see whether you are improving or degrading:\n${historyBrief(versions)}\n\nCHILD TRANSCRIPTS:\n${transcriptBlock(results)}\n\nScore 1–10. If score >= ${settings.targetScore}, action="pass". If this score is below the best in the log, prefer action="revert" to that rev or a real rewrite — not a tiny edit of a loser. Otherwise revise the FULL system prompt. Include one scenario per critical rule (keep old rule tests; add a scenario for any new rule). Only the FIRST user turn per scenario is required.`,
+          `GOAL:\n${goal}\n\nCURRENT SYSTEM PROMPT (rev ${currentRev}):\n${promptText}\n\nREVISION LOG (full prompts + scores, oldest → newest). Use it to see whether you are improving or degrading:\n${historyBrief(versions)}\n\nCHILD TRANSCRIPTS:\n${transcriptBlock(results)}\n\nIf any Child turn contains [ENGINE KILL], that is a hard failure: Child ran away past the completion cap. Do not pass. Add or tighten a rule that stops the runaway.\n\nScore 1–10. If score >= ${settings.targetScore}, action="pass". If this score is below the best in the log, prefer action="revert" to that rev or a real rewrite — not a tiny edit of a loser. Otherwise revise the FULL system prompt. Include one scenario per critical rule (keep old rule tests; add a scenario for any new rule). Only the FIRST user turn per scenario is required.`,
           (text) => onEvent({ type: "parent-delta", text }),
         );
       } catch (err) {
