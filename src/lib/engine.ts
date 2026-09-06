@@ -29,7 +29,6 @@ import type {
   ScenarioSpec,
   Settings,
 } from "./types";
-import { uid } from "./utils";
 import type { LiveEvent } from "./live-transcript.ts";
 
 export type EngineEvent =
@@ -348,6 +347,23 @@ export async function runEngine(input: EngineInput) {
       throwIfAborted(signal);
       onEvent({ type: "phase", phase: "Parent judging…", iteration: i });
       onEvent({ type: "parent-delta", text: "" });
+      const iterId = `iter-${i}`;
+      const iterStartedAt = Date.now();
+      onEvent({
+        type: "iteration",
+        record: {
+          id: iterId,
+          iteration: i,
+          rev: currentRev ?? 0,
+          startedAt: iterStartedAt,
+          ms: performance.now() - iterStarted,
+          score: null,
+          rationale: "Parent judging…",
+          action: "judging",
+          scenarios: results,
+          phaseMs: { parent: parentMs, child: childMs },
+        },
+      });
       const tJudge = performance.now();
       let judged: ParentReply;
       try {
@@ -393,10 +409,10 @@ export async function runEngine(input: EngineInput) {
       }
 
       const record: IterationRecord = {
-        id: uid("iter"),
+        id: iterId,
         iteration: i,
         rev: currentRev ?? 0,
-        startedAt: Date.now(),
+        startedAt: iterStartedAt,
         ms: performance.now() - iterStarted,
         score: judged.score,
         rationale: judged.rationale,

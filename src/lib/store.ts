@@ -10,6 +10,7 @@ import {
   DEFAULT_GOAL,
   DEFAULT_SETTINGS,
   migrateSettings,
+  upsertIteration,
   type ConnectionState,
   type IterationRecord,
   type LegacySettings,
@@ -104,7 +105,8 @@ export const useEngineStore = create<EngineStore>()(
         set((s) => ({
           versions: [...s.versions, version],
           currentRev: version.rev,
-          viewingRev: version.rev,
+          // Stay on the rev that just scored while the next draft is queued.
+          viewingRev: s.status === "running" && s.viewingRev != null ? s.viewingRev : version.rev,
         })),
       updateVersion: (rev, patch) =>
         set((s) => ({
@@ -113,7 +115,7 @@ export const useEngineStore = create<EngineStore>()(
       setCurrentRev: (rev) => set({ currentRev: rev, viewingRev: rev }),
       setViewingRev: (rev) => set({ viewingRev: rev }),
       addIteration: (record) =>
-        set((s) => ({ iterations: [...s.iterations, record] })),
+        set((s) => ({ iterations: upsertIteration(s.iterations, record) })),
       restoreRev: (rev) => {
         const src = get().versions.find((v) => v.rev === rev);
         if (!src) return null;

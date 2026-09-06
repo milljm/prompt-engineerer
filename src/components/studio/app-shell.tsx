@@ -80,6 +80,10 @@ export function AppShell() {
         switch (event.type) {
           case "phase":
             store.setRun({ phase: event.phase, liveParent: "" });
+            if (/^Parent judging/i.test(event.phase) || /^Scenario /i.test(event.phase)) {
+              const rev = useEngineStore.getState().currentRev;
+              if (rev != null) store.setViewingRev(rev);
+            }
             break;
           case "parent-delta":
             if (!event.text) {

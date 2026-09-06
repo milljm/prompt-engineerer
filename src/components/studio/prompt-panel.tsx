@@ -117,6 +117,7 @@ export function PromptPanel() {
                 key={v.rev}
                 version={v}
                 score={scoreForRev(v.rev, v, iterations)}
+                judging={iterations.some((it) => it.rev === v.rev && it.action === "judging")}
                 active={v.rev === (viewingRev ?? currentRev)}
                 current={v.rev === currentRev}
                 innerRef={v.rev === (viewingRev ?? currentRev) ? activeChip : undefined}
@@ -202,6 +203,7 @@ function PromptDiff({
 function VersionChip({
   version,
   score,
+  judging,
   active,
   current,
   onClick,
@@ -209,6 +211,7 @@ function VersionChip({
 }: {
   version: PromptVersion;
   score: number | null;
+  judging: boolean;
   active: boolean;
   current: boolean;
   onClick: () => void;
@@ -218,6 +221,8 @@ function VersionChip({
     <div className="flex shrink-0 flex-col items-center gap-1">
       {score != null ? (
         <Badge variant={score >= 8 ? "ok" : score <= 4 ? "child" : "outline"}>{score}/10</Badge>
+      ) : judging ? (
+        <Badge variant="outline">…</Badge>
       ) : (
         <span className="h-[22px] font-mono text-[10px] leading-[22px] text-muted-foreground">—</span>
       )}

@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { DEFAULT_SETTINGS, TURNS_MAX, clampTurns, migrateSettings } from "./types.ts";
+import { DEFAULT_SETTINGS, TURNS_MAX, clampTurns, migrateSettings, upsertIteration } from "./types.ts";
 
 describe("migrateSettings", () => {
   it("returns defaults for empty storage", () => {
@@ -56,5 +56,29 @@ describe("clampTurns", () => {
     assert.equal(clampTurns(undefined), 2);
     assert.equal(clampTurns(20), 20);
     assert.equal(clampTurns(21), 20);
+  });
+});
+
+describe("upsertIteration", () => {
+  const stub = {
+    id: "iter-1",
+    iteration: 1,
+    rev: 1,
+    startedAt: 1,
+    ms: 10,
+    score: null as number | null,
+    rationale: "Parent judging…",
+    action: "judging" as const,
+    scenarios: [],
+    phaseMs: { parent: 1, child: 1 },
+  };
+
+  it("appends a new iteration then replaces it in place", () => {
+    const once = upsertIteration([], stub);
+    assert.equal(once.length, 1);
+    const scored = upsertIteration(once, { ...stub, score: 7, action: "revise", rationale: "tightened the cap" });
+    assert.equal(scored.length, 1);
+    assert.equal(scored[0]?.score, 7);
+    assert.equal(scored[0]?.action, "revise");
   });
 });
