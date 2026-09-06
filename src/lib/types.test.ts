@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { DEFAULT_SETTINGS, migrateSettings } from "./types.ts";
+import { DEFAULT_SETTINGS, TURNS_MAX, clampTurns, migrateSettings } from "./types.ts";
 
 describe("migrateSettings", () => {
   it("returns defaults for empty storage", () => {
@@ -37,5 +37,18 @@ describe("migrateSettings", () => {
     const huge = migrateSettings({ sidebarWidth: 4000 });
     assert.ok(huge.sidebarWidth < 4000);
     assert.equal(huge.sidebarAuto, true);
+  });
+
+  it("clamps turns into 1–20", () => {
+    assert.equal(migrateSettings({ turns: 99 }).turns, TURNS_MAX);
+    assert.equal(migrateSettings({ turns: 0 }).turns, 1);
+  });
+});
+
+describe("clampTurns", () => {
+  it("defaults junk to 2 and caps at 20", () => {
+    assert.equal(clampTurns(undefined), 2);
+    assert.equal(clampTurns(20), 20);
+    assert.equal(clampTurns(21), 20);
   });
 });

@@ -90,6 +90,15 @@ export type Settings = {
 /** Pre-v2 persisted settings that still used the Edge/xAI backend picker. */
 export type LegacySettings = Partial<Settings> & { edgeUrl?: string; backend?: string };
 
+export const TURNS_MIN = 1;
+export const TURNS_MAX = 20;
+export const SCENARIOS_MAX = 20;
+
+export function clampTurns(n: unknown): number {
+  const v = typeof n === "number" && Number.isFinite(n) ? Math.round(n) : 2;
+  return Math.max(TURNS_MIN, Math.min(TURNS_MAX, v));
+}
+
 export const DEFAULT_SETTINGS: Settings = {
   apiUrl: "",
   apiKey: "",
@@ -121,6 +130,7 @@ export function migrateSettings(raw: LegacySettings | undefined): Settings {
     ...src,
     apiUrl: (src.apiUrl || fromEdge || "").trim(),
     apiKey: src.apiKey ?? "",
+    turns: clampTurns(src.turns ?? DEFAULT_SETTINGS.turns),
     sidebarWidth: clampSidebarWidth(src.sidebarWidth ?? DEFAULT_SETTINGS.sidebarWidth),
     sidebarAuto: src.sidebarAuto !== false,
   };

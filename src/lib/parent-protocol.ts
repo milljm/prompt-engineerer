@@ -3,7 +3,7 @@
  * a (sometimes messy) Parent reply into a typed revision + test plan.
  */
 
-import type { PromptVersion, ScenarioSpec } from "./types";
+import { SCENARIOS_MAX, type PromptVersion, type ScenarioSpec } from "./types.ts";
 
 /** System prompt given to the Parent LLM every call. */
 export const PARENT_SYSTEM = `You are Parent, a prompt engineer. You write and iterate on a SYSTEM PROMPT for a Child LLM.
@@ -21,6 +21,8 @@ Rules:
 - If an earlier revision scored higher, strongly consider reverting (action="revert", revert_to=<rev>).
 - Never resubmit a prompt that already scored lower than the best.
 - Scenarios must probe the stated goal (format, persona, refusals, consistency). Do not ask Child to produce disallowed content.
+- Prefer one scenario per critical rule in the system prompt. You may emit up to 20 scenarios.
+- Multi-turn scenarios: each user turn pressures a different facet (persona drift, format, refusal, follow-through).
 - Multi-turn scenarios: write EXACTLY the requested number of user turns. Each turns[].user is spoken TO Child, as a real user would.
 - Never put tester notes in turns[].user. Forbidden: "probe", "system prompt", "in-character", "follow up: probe", "act as a user", "test whether". Those leak into Child's context and break the run.
 - Each follow-up must be a new impatient/harder user line after Child's last reply, not a copy of the first turn and not a note to yourself.
@@ -171,7 +173,7 @@ function asScenarios(raw: unknown, minTurns: number): ScenarioSpec[] {
       out.push({ name, turns: sanitizeTurns(turns, minTurns) });
     }
   }
-  return out.slice(0, 4);
+  return out.slice(0, SCENARIOS_MAX);
 }
 
 /**

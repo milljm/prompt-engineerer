@@ -1,12 +1,35 @@
 # Prompt Engineerer
 
-A studio for forging system prompts. You describe the behavior you want. A
-**Parent** model writes (then revises) a system prompt. A **Child** model is
-thrown scenarios — including extra turns — and scored. Parent iterates until
-the quality target holds, or you hit Stop.
+A walk-away studio for **wrangling system prompts** against models that ignore
+polite rules.
+
+You describe the behavior you want. A **Parent** model writes a system prompt
+and designs tests — often one scenario per critical rule. A **Child** model
+has to follow that prompt. After each Child reply, Parent *sees the actual
+output* and writes the next user turn to poke whatever just broke. When the
+scenarios finish, Parent scores the transcripts and revises the prompt.
+Repeat until the Child actually obeys, or you hit Stop.
+
+That is the point. Strong-story models will look at “do not exceed 600 words”
+and ignore it. Parent keeps changing the *wording of the cage* until Child
+complies. You click **Engineer** and go do something else.
 
 Works with any **OpenAI-compatible** `/v1` server: local Edge / MLX / llama.cpp /
 Ollama / vLLM / LM Studio, or a hosted API (OpenAI, xAI, Groq, OpenRouter, …).
+
+## What a run does
+
+1. Parent drafts a full system prompt (or uses your seed) and names scenarios.
+2. For each scenario, Child answers turn 1. Parent reads that reply and writes
+   turn 2. Repeat up to **Turns per test** (1–20).
+3. After every scenario, Parent gets the full Child transcripts and scores
+   1–10. Miss the target → revise or revert. Hit it → stop.
+4. Revisions stay on a timeline with scores and diffs. Restore or abandon any
+   rev. Parent sees every prior prompt and score so it can tell improve vs
+   degrade.
+
+**Stop** aborts the loop. Local servers are asked to cancel in-flight
+generation.
 
 ## Requirements
 
@@ -93,14 +116,6 @@ is the Python front door so you do not have to remember npm.
 Open PRs against `main`. GitHub Actions (`.github/workflows/ci.yml`) runs the
 Node tests, typecheck, ESLint, the Python launcher tests, and pylint. CI must
 be green before merge.
-
-## How a run works
-
-1. Parent drafts a full system prompt (or you seed one) and designs scenarios.
-2. Child answers each scenario for N turns (the **Turns per test** slider).
-3. Parent scores 1–10. Below the target, it revises the *entire* prompt or
-   reverts to an earlier revision.
-4. Repeat until the target score, **Max iterations**, or **Stop**.
 
 ## Layout
 

@@ -7,6 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Slider } from "@/components/ui/slider";
 import { probeConnection } from "@/lib/connect";
 import { useEngineStore } from "@/lib/store";
+import { TURNS_MAX, TURNS_MIN } from "@/lib/types";
 import { cn, shortModel } from "@/lib/utils";
 import { ThemeToggle } from "./theme-toggle";
 
@@ -188,8 +189,8 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
             <SliderRow
               label="Turns per test"
               value={settings.turns}
-              min={1}
-              max={4}
+              min={TURNS_MIN}
+              max={TURNS_MAX}
               step={1}
               display={`${settings.turns}`}
               disabled={running}
