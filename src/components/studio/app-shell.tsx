@@ -68,6 +68,7 @@ export function AppShell() {
       error: null,
     });
 
+    const prev = useEngineStore.getState().iterations.at(-1);
     await runEngine({
       goal: state.goal,
       seedPrompt: state.seedPrompt,
@@ -76,6 +77,9 @@ export function AppShell() {
       settings: useEngineStore.getState().settings,
       parentSystem: useEngineStore.getState().parentPrompts.draft,
       parentFollowupSystem: useEngineStore.getState().parentPrompts.followup,
+      getLivePrompt: () => useEngineStore.getState().currentPrompt(),
+      ledger: prev?.ledger,
+      priorResults: prev?.scenarios,
       signal: ac.signal,
       onEvent: (event: EngineEvent) => {
         const store = useEngineStore.getState();
@@ -182,8 +186,8 @@ export function AppShell() {
             2-pane  md–xl    (768–1279): sidebar | stacked studio
             1-pane  <md      (<768): hamburger + stacked studio
           */}
-          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto xl:flex-row xl:overflow-hidden">
-            <div className="flex min-w-0 shrink-0 flex-col xl:min-h-0 xl:flex-1">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden xl:flex-row">
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
               <RunToolbar onStart={() => void onStart()} onStop={onStop} />
               <StatsBar />
               <PromptPanel />

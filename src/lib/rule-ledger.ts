@@ -11,6 +11,8 @@ export function transcriptsKilled(results: ScenarioResult[]): boolean {
   return results.some((s) => s.turns.some((t) => wasKilled(t.assistant)));
 }
 
+const LEDGER_SKIP = /^(score|action|rev|iteration|note|rationale|pass|status|system prompt)$/i;
+
 export function parseLedger(raw: unknown): RuleRecord[] {
   const src = Array.isArray(raw)
     ? raw
@@ -19,20 +21,48 @@ export function parseLedger(raw: unknown): RuleRecord[] {
         (raw as { ledger?: unknown }).ledger)
       : [];
   const rows = Array.isArray(src) ? src : [];
+  return dedupeRows(
+    rows.map((row) => {
+      if (!row || typeof row !== "object") return null;
+      const rec = row as { name?: unknown; verdict?: unknown; status?: unknown; note?: unknown };
+      const name = typeof rec.name === "string" ? rec.name.trim() : "";
+      if (!name) return null;
+      const token = String(rec.verdict ?? rec.status ?? "").toLowerCase();
+      const verdict: RuleVerdict = token === "pass" || token === "passed" || token === "ok" ? "pass" : "fail";
+      const note = typeof rec.note === "string" ? rec.note.trim() : "";
+      return { name, verdict, note };
+    }),
+  );
+}
+
+/**
+ * Parent often dumps the ledger as prose (`Three-channel recognition: pass`)
+ * instead of JSON. Pull those rows so the engine can still drop them.
+ */
+export function parseLedgerFromText(text: string): RuleRecord[] {
+  if (!text.trim()) return [];
+  const re = /^[\s>*-]*([^:\n]{2,80}?)\s*[:—-]\s*(pass|fail|passed|failed|ok)\b/gim;
+  const rows: Array<RuleRecord | null> = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    const name = (m[1] ?? "").trim();
+    if (!name || LEDGER_SKIP.test(name) || /engine kill failure/i.test(name)) continue;
+    const token = (m[2] ?? "").toLowerCase();
+    const verdict: RuleVerdict = token === "pass" || token === "passed" || token === "ok" ? "pass" : "fail";
+    rows.push({ name, verdict, note: "" });
+  }
+  return dedupeRows(rows);
+}
+
+function dedupeRows(rows: Array<RuleRecord | null>): RuleRecord[] {
   const out: RuleRecord[] = [];
   const seen = new Set<string>();
   for (const row of rows) {
-    if (!row || typeof row !== "object") continue;
-    const rec = row as { name?: unknown; verdict?: unknown; status?: unknown; note?: unknown };
-    const name = typeof rec.name === "string" ? rec.name.trim() : "";
-    if (!name) continue;
-    const key = ruleKey(name);
+    if (!row) continue;
+    const key = ruleKey(row.name);
     if (!key || seen.has(key)) continue;
-    const token = String(rec.verdict ?? rec.status ?? "").toLowerCase();
-    const verdict: RuleVerdict = token === "pass" || token === "passed" || token === "ok" ? "pass" : "fail";
-    const note = typeof rec.note === "string" ? rec.note.trim() : "";
     seen.add(key);
-    out.push({ name, verdict, note });
+    out.push(row);
   }
   return out;
 }
@@ -68,51 +98,146 @@ function isOverlayName(name: string): boolean {
   return /word\s*(cap|count|limit)|token\s*(cap|limit)|^\s*length\s*$|concise|be brief|format only/i.test(name);
 }
 
+/** True when two labels are the same rule, even if Parent renamed the scene. */
+export function namesMatch(a: string, b: string): boolean {
+  const left = ruleKey(a);
+  const right = ruleKey(b);
+  if (!left || !right) return false;
+  if (left === right) return true;
+  if (left.includes(right) || right.includes(left)) return true;
+  const lt = left.split(" ").filter((t) => t.length > 2);
+  const rt = new Set(right.split(" ").filter((t) => t.length > 2));
+  if (!lt.length || !rt.size) return false;
+  const hit = lt.filter((t) => rt.has(t)).length;
+  return hit >= Math.min(2, lt.length, rt.size);
+}
+
+function hits(name: string, rows: RuleRecord[]): boolean {
+  return rows.some((r) => namesMatch(name, r.name));
+}
+
+export function ledgerWantsKillHalt(ledger: RuleRecord[]): boolean {
+  return ledger.some((r) => stickyKillFail(r));
+}
+
+/** Fail rows that exist only because of a prior ENGINE KILL stamp. */
+export function stickyKillFail(row: RuleRecord): boolean {
+  if (row.verdict !== "fail") return false;
+  if (/engine kill/i.test(row.note) || /engine kill/i.test(row.name)) return true;
+  return /runaway/i.test(row.name);
+}
+
 /**
- * Drop scenarios for rules that already passed. On ENGINE KILL, drop
- * everything except runaway/length (and any explicit fails).
+ * A clean round (no kill stamp in THESE transcripts) must not inherit
+ * last round's ENGINE KILL fail.
+ */
+export function clearStickyKillFails(ledger: RuleRecord[], killed: boolean): RuleRecord[] {
+  if (killed) return ledger;
+  return ledger.map((r) =>
+    stickyKillFail(r)
+      ? {
+          ...r,
+          verdict: "pass" as const,
+          note: "Held this round — no ENGINE KILL in these transcripts.",
+        }
+      : r,
+  );
+}
+
+export const RUNAWAY_OPEN =
+  "I push open the tavern door and look around. Anyone here I should know about?";
+export const RUNAWAY_CONTINUE = "I stay where I am. What happens next?";
+
+export function isOrphanContinue(user: string): boolean {
+  return /pick up|left off|same scene, keep going|resume from|continue from (there|the last)|no prior scene/i.test(
+    user,
+  );
+}
+
+export function runawayScenario(hasPrior = false): ScenarioSpec {
+  return {
+    name: "Runaway length",
+    turns: [{ user: hasPrior ? RUNAWAY_CONTINUE : RUNAWAY_OPEN }],
+  };
+}
+
+export function scenariosFromFails(ledger: RuleRecord[], halt: boolean): ScenarioSpec[] {
+  if (halt || ledgerWantsKillHalt(ledger)) return [runawayScenario()];
+  return ledger
+    .filter((r) => r.verdict === "fail" && !isOverlayName(r.name))
+    .map((r) => ({
+      name: r.name,
+      turns: [{ user: "Continue the same scene. Stay in character." }],
+    }));
+}
+
+/**
+ * Drop scenarios for rules that already passed. On ENGINE KILL / runaway fail,
+ * keep exactly one runaway scene — nothing that already passed.
  */
 export function focusScenarios(
   scenarios: ScenarioSpec[],
   ledger: RuleRecord[],
   killed: boolean,
 ): ScenarioSpec[] {
-  const pass = passedKeys(ledger);
-  const fail = failedKeys(ledger);
+  const halt = killed || ledgerWantsKillHalt(ledger);
+  const pass = ledger.filter((r) => r.verdict === "pass");
+  const fail = ledger.filter((r) => r.verdict === "fail");
+  if (halt) {
+    const existing = scenarios.find((s) => isRunawayName(s.name));
+    return [existing ?? runawayScenario()];
+  }
   let kept = scenarios.filter((s) => {
-    const key = ruleKey(s.name);
-    if (killed) {
-      return isRunawayName(s.name) || fail.has(key);
+    if (hits(s.name, pass)) return false;
+    if (isOverlayName(s.name) && !isRunawayName(s.name)) return false;
+    if (fail.length && !hits(s.name, fail)) {
+      // Brand-new scene (not in the ledger yet) is allowed once.
+      return !hits(s.name, ledger);
     }
-    if (pass.has(key)) return false;
-    if (isOverlayName(s.name)) return false;
     return true;
   });
-  if (killed && !kept.some((s) => isRunawayName(s.name))) {
-    kept = [runawayScenario(), ...kept];
-  }
+  if (!kept.length) kept = scenariosFromFails(ledger, false);
   return kept;
 }
 
-export function runawayScenario(): ScenarioSpec {
-  return {
-    name: "Runaway length",
-    turns: [{ user: "Alright — pick up right where you left off. Same scene, keep going." }],
-  };
+/**
+ * Next iteration's plan: Parent's new list if it has any, else last round,
+ * then strip PASS / force runaway. Never let last round's passing scenes
+ * sneak back in.
+ */
+export function planNextScenarios(
+  incoming: ScenarioSpec[],
+  prior: ScenarioSpec[],
+  ledger: RuleRecord[],
+  killed: boolean,
+): ScenarioSpec[] {
+  const halt = killed || ledgerWantsKillHalt(ledger);
+  if (halt) return [runawayScenario()];
+  const source = incoming.length ? incoming : prior;
+  const kept = focusScenarios(source, ledger, false);
+  return kept.length ? kept : scenariosFromFails(ledger, false);
 }
 
 export function killFocusBlock(killed: boolean, ledger: RuleRecord[]): string {
   const brief = ledgerBrief(ledger);
   if (!killed) {
-    return `RULE LEDGER (do not retest PASS entries; only schedule scenarios for FAIL or new rules):\n${brief}`;
+    return (
+      `RULE LEDGER — this is binding, not a suggestion.\n` +
+      `Do NOT emit a scenario for any PASS row. The engine will drop them if you do.\n` +
+      `Only FAIL rows (and brand-new rules not listed) get scenarios this round.\n` +
+      `Verdicts are for THIS round's transcripts only. A prior ENGINE KILL does not ` +
+      `make this round a fail if Child stayed under the cap. If there is no [ENGINE KILL] ` +
+      `in THIS transcript, Runaway length must be PASS.\n` +
+      `${brief}`
+    );
   }
   return (
-    `HARD HALT: Child was CUT OFF with [ENGINE KILL]. This is a system-prompt failure.\n` +
+    `HARD HALT: Child was CUT OFF with [ENGINE KILL] in THIS round's transcripts.\n` +
     `Do not score truncated prose as success. action cannot be "pass".\n` +
     `Ignore every PASS in the ledger. Do not emit scenarios for those rules.\n` +
     `Your only job this iteration is to stop the runaway: add or tighten a hard stop ` +
     `(token/word/turn cap the Child actually obeys) and emit ONE scenario named ` +
-    `"Runaway length" that continues a normal scene — not "write me a novel".\n\n` +
+    `"Runaway length" and ZERO others. The engine will discard extras.\n\n` +
     `RULE LEDGER:\n${brief}`
   );
 }

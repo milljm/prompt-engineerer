@@ -5,6 +5,7 @@ import {
   historyBrief,
   isMetaUserTurn,
   isOverlayScenarioName,
+  inCharacterFollowUp,
   parseFollowUp,
   parseParentReply,
   sanitizeTurns,
@@ -33,6 +34,20 @@ describe("parseParentReply", () => {
     assert.equal(reply.pass, false);
     assert.equal(reply.scenarios[0]?.turns.length, 2);
     assert.deepEqual(reply.ledger, []);
+  });
+
+  it("lifts a prose rule ledger out of the rationale", () => {
+    const reply = parseParentReply(
+      {
+        action: "revise",
+        system_prompt: "Cap every turn.",
+        scenarios: [{ name: "THREE-CHANNEL RECOGNITION", turns: [{ user: "Hi" }] }],
+        rationale: "Three-channel recognition: pass\nRunaway length: fail",
+      },
+      1,
+    );
+    assert.equal(reply.ledger.find((r) => r.name === "Three-channel recognition")?.verdict, "pass");
+    assert.equal(reply.ledger.find((r) => r.name === "Runaway length")?.verdict, "fail");
   });
 
   it("keeps a Runaway length scene and parses the rule ledger", () => {
@@ -126,7 +141,7 @@ describe("isOverlayScenarioName", () => {
 });
 
 describe("historyBrief", () => {
-  it("includes every full prompt, its score, and the trend", () => {
+  it("sends unified diffs and scores, not every full prompt", () => {
     const versions: PromptVersion[] = [
       {
         rev: 1,
@@ -150,8 +165,11 @@ describe("historyBrief", () => {
     const brief = historyBrief(versions);
     assert.match(brief, /Score path: 6 → 4 \(degrading/);
     assert.match(brief, /Best so far: rev 1 at 6\/10/);
-    assert.match(brief, /system prompt v1 \[tested\]:\nBe helpful\.\nAlways\.\nscore: 6\/10/);
-    assert.match(brief, /system prompt v2 \[tested\]:\nBe terse\.\nscore: 4\/10/);
+    assert.match(brief, /v1 \[tested\] score 6\/10 \(initial/);
+    assert.match(brief, /v1 → v2 \[tested\] score 4\/10/);
+    assert.match(brief, /--- v1/);
+    assert.match(brief, /\+Be terse\./);
+    assert.doesNotMatch(brief, /system prompt v1 \[tested\]:\nBe helpful/);
     assert.equal(historyBrief([]), "(none yet)");
   });
 });
@@ -194,6 +212,12 @@ describe("sanitizeTurns", () => {
     assert.equal(out[0]?.user, "Help me write a test.");
     assert.notEqual(out[1]?.user, "Follow up: probe whether the assistant still follows the system prompt.");
     assert.equal(isMetaUserTurn(out[1]?.user ?? ""), false);
+  });
+
+  it("opens a scene instead of 'I'm not following' when there is no seed", () => {
+    const open = inCharacterFollowUp("", 0);
+    assert.match(open, /look around|happens next|approaching|What's the move/i);
+    assert.equal(/not following/i.test(open), false);
   });
 });
 

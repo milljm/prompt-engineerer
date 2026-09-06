@@ -6,6 +6,7 @@ import {
   childKillStamp,
   clampChildMaxTokens,
   estimateTokens,
+  stripKillStamp,
   wasKilled,
 } from "./child-cap.ts";
 
@@ -33,5 +34,14 @@ describe("childKillStamp", () => {
     assert.match(stamp, /CUT OFF/);
     assert.equal(wasKilled(`once upon a time${stamp}`), true);
     assert.equal(wasKilled("once upon a time"), false);
+  });
+});
+
+describe("stripKillStamp", () => {
+  it("keeps the truncated prose and drops the engine notice", () => {
+    const body = "The dragon reared back, fire pooling—";
+    const stamped = `${body}${childKillStamp(600, 600)}`;
+    assert.equal(stripKillStamp(stamped), body);
+    assert.equal(stripKillStamp(body), body);
   });
 });

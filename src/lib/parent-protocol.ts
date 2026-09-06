@@ -3,8 +3,9 @@
  * a (sometimes messy) Parent reply into a typed revision + test plan.
  */
 
+import { unifiedDiff } from "./diff.ts";
 import { SCENARIOS_MAX, type PromptVersion, type RuleRecord, type ScenarioSpec } from "./types.ts";
-import { parseLedger } from "./rule-ledger.ts";
+import { mergeLedger, parseLedger, parseLedgerFromText } from "./rule-ledger.ts";
 
 /** System prompt given to the Parent LLM every call. */
 export const PARENT_SYSTEM = `You are Parent, a prompt engineer. You write and iterate on a SYSTEM PROMPT for a Child LLM.
@@ -16,7 +17,7 @@ Return ONLY a JSON object. No markdown fences. No prose outside JSON.
 Rules:
 - system_prompt must be the FULL prompt, never a diff or "add this line".
 - Scores: 1 = useless, 5 = mixed, 8 = reliably good, 10 = holds under multi-turn pressure.
-- You are given EVERY prior revision: the full system prompt and its score. Read the trend.
+- You are given the CURRENT full system prompt plus a REVISION LOG of unified diffs (vN → vN+1) with scores. Read the diffs and the trend. Historical prompts are NOT reprinted in full.
 - Your job is to IMPROVE quality every iteration. If scores are dropping, you are going the wrong way — revert to the best rev or try a structurally different approach. Do not nibble at a failing prompt.
 - Prefer surgical edits over rewrites unless the prompt is structurally wrong or scores have stalled.
 - If an earlier revision scored higher, strongly consider reverting (action="revert", revert_to=<rev>).
@@ -29,9 +30,9 @@ SCENARIO BUDGET — two kinds of rules:
 - Example: PLAYER AGENCY gets a scenario. WORD LIMIT does not. While you test agency, also count words and ding the score if Child blows the cap.
 - Never name a scenario "Word cap", "Word count", "Be concise", "Length", or "Token limit". Fold that check into the other scenes.
 - If you ADD a behavior rule, ADD a scenario for it. If you ADD an overlay (word cap, format), do not add a scenario — just judge it everywhere.
-- Do not drop old behavior scenarios unless you removed that rule OR the RULE LEDGER marks them PASS. Passed rules are done — do not spend turns on them.
-- RULE LEDGER is the memory of this run. Every judging reply MUST include rule_ledger: one row per critical rule (name, verdict pass|fail, short note). Copy PASS rows forward. Only FAIL (or brand-new) rules get scenarios next iteration.
-- [ENGINE KILL] is a hard halt. If any Child turn contains that mark: action cannot be pass; score the truncated prose as a failure (≤4); ignore PASS rows for scheduling; emit exactly one scenario named "Runaway length" and no agency/prose/persona scenes. Tighten a stop-the-runaway rule. Overlays that caused a kill are no longer overlays — they are the only test that matters until Child stops hitting the cap.
+- Do not drop old behavior scenarios unless you removed that rule OR the RULE LEDGER marks them PASS. Passed rules are done — do not spend turns on them. The engine will DELETE any scenario that matches a PASS row, even if you emit it.
+- RULE LEDGER is the memory of this run. Every judging reply MUST include rule_ledger: one row per critical rule (name, verdict pass|fail, short note). Copy PASS rows forward. Only FAIL (or brand-new) rules get scenarios next iteration. If a row is PASS, you must not name a scenario after it.
+- [ENGINE KILL] is a hard halt for THIS round only. If any Child turn in these transcripts contains that mark OR you are still trying to stop a live runaway: action cannot be pass; score the truncated prose as a failure (≤4); emit exactly one scenario named "Runaway length". If THIS round's transcripts have no [ENGINE KILL], mark Runaway length PASS — do not carry the last kill forward.
 - Turns are PER BEHAVIOR SCENARIO. Each of those gets the full requested turn count.
 - You may emit up to 20 behavior scenarios. Max iterations stops a runaway run.
 - Each scenario needs a strong FIRST user turn that pressures that behavior. Later turns are written live; still include fallback follow-ups.
@@ -109,17 +110,24 @@ export function isMetaUserTurn(text: string): boolean {
   );
 }
 
+const SCENE_OPENS = [
+  "I step inside and look around. What do I see?",
+  "I wait by the door. What happens next?",
+  "I sit down. Anyone approaching?",
+  "I keep my voice low. What's the move?",
+];
+
 const FOLLOW_UPS = [
-  "That didn't do it. Same request — don't start over.",
-  "I'm not following. Shorter, same role.",
-  "Still stuck. Next small step only, don't dump the whole answer.",
+  "I stay in the scene. What happens next?",
+  "Still here. Next small step only.",
   "Do it again for a slightly harder case. Stay in role.",
-  "You drifted. Answer what I asked first, nothing else.",
+  "Answer what I asked first, nothing else.",
 ];
 
 export function inCharacterFollowUp(seed: string, index: number): string {
   const clipped = seed.replace(/\s+/g, " ").trim().slice(0, 140);
-  if (index === 0 && clipped) {
+  if (!clipped) return SCENE_OPENS[index % SCENE_OPENS.length];
+  if (index === 0) {
     return `That wasn't enough. Going back to: "${clipped}" — continue, don't restart.`;
   }
   return FOLLOW_UPS[index % FOLLOW_UPS.length];
@@ -207,7 +215,7 @@ export function parseParentReply(raw: unknown, minTurns: number): ParentReply {
     score,
     pass: rec.pass === true || action === "pass",
     rationale,
-    ledger: parseLedger(rec.rule_ledger ?? rec.ledger),
+    ledger: mergeLedger(parseLedger(rec.rule_ledger ?? rec.ledger), parseLedgerFromText(rationale)),
   };
 }
 
@@ -228,10 +236,16 @@ export function scoreTrend(versions: PromptVersion[]): string {
 export function historyBrief(versions: PromptVersion[]): string {
   if (!versions.length) return "(none yet)";
   const ordered = [...versions].sort((a, b) => a.rev - b.rev);
-  const blocks = ordered.map((v) => {
+  const blocks = ordered.map((v, i) => {
     const score = v.score == null ? "unscored" : `${v.score}/10`;
     const note = v.rationale.trim() ? `\nnote: ${v.rationale.trim()}` : "";
-    return `system prompt v${v.rev} [${v.status}]:\n${v.prompt.trim() || "(empty)"}\nscore: ${score}${note}`;
+    if (i === 0) {
+      return `v${v.rev} [${v.status}] score ${score} (initial — full text is CURRENT SYSTEM PROMPT if this is still current)${note}`;
+    }
+    const prev = ordered[i - 1];
+    if (!prev) return `v${v.rev} [${v.status}] score ${score}${note}`;
+    const diff = unifiedDiff(prev.prompt, v.prompt, `v${prev.rev}`, `v${v.rev}`);
+    return `v${prev.rev} → v${v.rev} [${v.status}] score ${score}${note}\n${diff}`;
   });
   return `${scoreTrend(ordered)}\n---\n${blocks.join("\n---\n")}`;
 }

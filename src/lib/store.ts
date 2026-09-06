@@ -35,9 +35,11 @@ type EngineStore = {
   connection: ConnectionState;
   viewingRev: number | null;
   parentPrompts: Record<ParentPromptKey, string>;
+  promptDraft: string | null;
   setSettings: (patch: Partial<Settings>) => void;
   setGoal: (goal: string) => void;
   setSeedPrompt: (prompt: string) => void;
+  setPromptDraft: (draft: string | null) => void;
   setConnection: (patch: Partial<ConnectionState>) => void;
   setRun: (patch: {
     status?: RunStatus;
@@ -85,10 +87,12 @@ export const useEngineStore = create<EngineStore>()(
       connection: emptyConnection,
       viewingRev: null,
       parentPrompts: defaultParentPrompts(),
+      promptDraft: null,
       setSettings: (patch) =>
         set((s) => ({ settings: { ...s.settings, ...patch } })),
       setGoal: (goal) => set({ goal }),
       setSeedPrompt: (seedPrompt) => set({ seedPrompt }),
+      setPromptDraft: (promptDraft) => set({ promptDraft }),
       setConnection: (patch) =>
         set((s) => ({ connection: { ...s.connection, ...patch } })),
       setRun: (patch) => set(patch),
@@ -105,14 +109,19 @@ export const useEngineStore = create<EngineStore>()(
           liveLines: [],
           error: null,
           viewingRev: null,
+          promptDraft: null,
         }),
       addVersion: (version) =>
-        set((s) => ({
-          versions: [...s.versions, version],
-          currentRev: version.rev,
-          // Stay on the rev that just scored while the next draft is queued.
-          viewingRev: s.status === "running" && s.viewingRev != null ? s.viewingRev : version.rev,
-        })),
+        set((s) => {
+          const cur = s.versions.find((v) => v.rev === s.currentRev);
+          const dirty = s.promptDraft != null && cur != null && s.promptDraft !== cur.prompt;
+          return {
+            versions: [...s.versions, version],
+            currentRev: version.rev,
+            viewingRev: s.status === "running" && s.viewingRev != null ? s.viewingRev : version.rev,
+            promptDraft: dirty ? s.promptDraft : null,
+          };
+        }),
       updateVersion: (rev, patch) =>
         set((s) => ({
           versions: s.versions.map((v) => (v.rev === rev ? { ...v, ...patch } : v)),
@@ -164,7 +173,8 @@ export const useEngineStore = create<EngineStore>()(
         return target?.rev ?? null;
       },
       currentPrompt: () => {
-        const { versions, currentRev, seedPrompt } = get();
+        const { versions, currentRev, seedPrompt, promptDraft } = get();
+        if (promptDraft != null) return promptDraft;
         const cur = versions.find((v) => v.rev === currentRev);
         return cur?.prompt ?? seedPrompt;
       },
@@ -175,7 +185,7 @@ export const useEngineStore = create<EngineStore>()(
     }),
     {
       name: "pe-engine",
-      version: 4,
+      version: 5,
       partialize: (s) => ({
         settings: s.settings,
         goal: s.goal,
@@ -191,11 +201,13 @@ export const useEngineStore = create<EngineStore>()(
           parentPrompts?: Partial<Record<ParentPromptKey, string>>;
         };
         const factory = defaultParentPrompts();
+        const oldDraft = p.parentPrompts?.draft ?? "";
+        const staleParent = !oldDraft || oldDraft.includes("EVERY prior revision");
         return {
           ...p,
           settings: migrateSettings(p.settings),
           parentPrompts: {
-            draft: p.parentPrompts?.draft || factory.draft,
+            draft: staleParent ? factory.draft : oldDraft,
             followup: p.parentPrompts?.followup || factory.followup,
           },
         };
