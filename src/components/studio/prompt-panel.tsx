@@ -66,6 +66,11 @@ export function PromptPanel() {
         ) : (
           <Badge variant="outline">seed</Badge>
         )}
+        {viewed?.score != null ? (
+          <Badge variant={viewed.score >= 8 ? "ok" : "outline"}>{viewed.score}/10</Badge>
+        ) : viewed ? (
+          <Badge variant="outline">unscored</Badge>
+        ) : null}
         <div className="ml-auto flex items-center gap-1">
           <Button
             type="button"
@@ -200,26 +205,28 @@ function VersionChip({
 }) {
   const score = version.score;
   return (
-    <button
-      ref={innerRef}
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "flex h-8 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-[11px] font-medium transition-[background-color,box-shadow] duration-[var(--motion-quick)]",
-        active
-          ? "bg-primary text-primary-foreground"
-          : "bg-secondary text-muted-foreground hover:text-foreground",
-        version.status === "abandoned" && !active && "opacity-50 line-through",
-      )}
-    >
-      <span>v{version.rev}</span>
+    <div className="flex shrink-0 flex-col items-center gap-1">
       {score != null ? (
-        <span className={cn("tabular-nums", active ? "opacity-80" : "text-foreground")}>
-          {score}/10
-        </span>
-      ) : null}
-      {version.status === "champion" ? <span>best</span> : null}
-      {current && !active ? <span className="size-1.5 rounded-full bg-hot" /> : null}
-    </button>
+        <Badge variant={score >= 8 ? "ok" : score <= 4 ? "child" : "outline"}>{score}/10</Badge>
+      ) : (
+        <span className="h-[22px] font-mono text-[10px] leading-[22px] text-muted-foreground">—</span>
+      )}
+      <button
+        ref={innerRef}
+        type="button"
+        onClick={onClick}
+        className={cn(
+          "flex h-8 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-[11px] font-medium transition-[background-color,box-shadow] duration-[var(--motion-quick)]",
+          active
+            ? "bg-primary text-primary-foreground"
+            : "bg-secondary text-muted-foreground hover:text-foreground",
+          version.status === "abandoned" && !active && "opacity-50 line-through",
+        )}
+      >
+        <span>v{version.rev}</span>
+        {version.status === "champion" ? <span>best</span> : null}
+        {current && !active ? <span className="size-1.5 rounded-full bg-hot" /> : null}
+      </button>
+    </div>
   );
 }

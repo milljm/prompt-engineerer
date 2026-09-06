@@ -24,4 +24,10 @@ describe("extractJsonObject", () => {
     assert.throws(() => extractJsonObject("   "), /Empty model reply/);
     assert.throws(() => extractJsonObject("no object here"), /Could not parse JSON/);
   });
+
+  it("repairs illegal apostrophe escapes", () => {
+    const raw = `{"rationale":"Child didn't hold the persona."}`;
+    const illegal = `{"rationale":"Child didn\\'t hold the persona."}`;
+    assert.deepEqual(extractJsonObject(illegal), extractJsonObject(raw));
+  });
 });
