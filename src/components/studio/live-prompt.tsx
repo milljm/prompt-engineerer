@@ -1,4 +1,4 @@
-import { useMemo, useRef } from "react";
+import { useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { diffLines, lineMarks } from "@/lib/diff";
@@ -6,8 +6,9 @@ import { cn } from "@/lib/utils";
 
 /**
  * Editable system prompt that paints a live line-diff against a baseline.
- * Deleted lines sit above the textarea (red); the textarea itself is
- * overlayed so added lines glow green as you type.
+ * Deleted lines sit above the current text (red). The whole stack — removed
+ * lines plus the editor — shares one panel scroller so nothing floats
+ * disconnected above the rest of the column.
  */
 export function LivePromptEditor({
   baseline,
@@ -32,14 +33,9 @@ export function LivePromptEditor({
   const removed = ops.filter((o) => o.type === "del" && o.text !== "");
   const added = ops.filter((o) => o.type === "add" && o.text !== "").length;
   const changed = baseline !== value;
-  const preRef = useRef<HTMLPreElement>(null);
-
-  function syncScroll(top: number) {
-    if (preRef.current) preRef.current.scrollTop = top;
-  }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <p className="mb-2 flex shrink-0 flex-wrap items-center gap-2 text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
         Live diff {fromLabel} → {toLabel}
         {unsaved ? <Badge variant="outline">unsaved</Badge> : null}
@@ -51,39 +47,39 @@ export function LivePromptEditor({
           <span className="text-destructive">red removed</span>
         </span>
       </p>
-      {removed.length ? (
-        <pre className="mb-2 max-h-32 shrink-0 overflow-auto whitespace-pre-wrap rounded-md bg-destructive/10 p-3 font-mono text-[13px] leading-relaxed text-destructive shadow-[var(--shadow-border)]">
-          {removed.map((op, i) => (
-            <span key={`del-${i}-${op.text.slice(0, 24)}`} className="block">
-              − {op.text || " "}
-            </span>
-          ))}
-        </pre>
-      ) : null}
-      <div className="relative min-h-0 flex-1">
-        <pre
-          ref={preRef}
-          aria-hidden
-          className="pointer-events-none absolute inset-0 overflow-auto whitespace-pre-wrap break-words rounded-md bg-card p-3 font-mono text-[13px] leading-relaxed text-foreground"
-        >
-          {lines.map((line, i) => (
-            <span
-              key={`ln-${i}`}
-              className={cn("block", marks[i] === "add" && changed && "bg-ok/15 text-ok")}
-            >
-              {line || " "}
-            </span>
-          ))}
-        </pre>
-        <Textarea
-          value={value}
-          readOnly={!editable}
-          onChange={(e) => onChange?.(e.target.value)}
-          onScroll={(e) => syncScroll(e.currentTarget.scrollTop)}
-          aria-label="System prompt under test"
-          spellCheck={false}
-          className="absolute inset-0 h-full min-h-0 resize-none overflow-auto bg-transparent font-mono text-[13px] leading-relaxed text-transparent caret-foreground"
-        />
+      <div className="min-h-0 flex-1 overflow-auto overscroll-contain">
+        {removed.length ? (
+          <pre className="mb-2 whitespace-pre-wrap rounded-md bg-destructive/10 p-3 font-mono text-[13px] leading-relaxed text-destructive shadow-[var(--shadow-border)]">
+            {removed.map((op, i) => (
+              <span key={`del-${i}-${op.text.slice(0, 24)}`} className="block">
+                − {op.text || " "}
+              </span>
+            ))}
+          </pre>
+        ) : null}
+        <div className="relative min-h-48">
+          <pre
+            aria-hidden
+            className="pointer-events-none whitespace-pre-wrap break-words rounded-md bg-card p-3 font-mono text-[13px] leading-relaxed text-foreground shadow-[var(--shadow-border)]"
+          >
+            {lines.map((line, i) => (
+              <span
+                key={`ln-${i}`}
+                className={cn("block", marks[i] === "add" && changed && "bg-ok/15 text-ok")}
+              >
+                {line || " "}
+              </span>
+            ))}
+          </pre>
+          <Textarea
+            value={value}
+            readOnly={!editable}
+            onChange={(e) => onChange?.(e.target.value)}
+            aria-label="System prompt under test"
+            spellCheck={false}
+            className="absolute inset-0 h-full min-h-0 resize-none overflow-hidden bg-transparent font-mono text-[13px] leading-relaxed text-transparent caret-foreground shadow-none"
+          />
+        </div>
       </div>
     </div>
   );
