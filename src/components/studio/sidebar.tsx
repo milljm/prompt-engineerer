@@ -187,7 +187,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
               onChange={(n) => setSettings({ targetScore: n })}
             />
             <SliderRow
-              label="Turns per test"
+              label="Turns per rule"
               value={settings.turns}
               min={TURNS_MIN}
               max={TURNS_MAX}
@@ -196,6 +196,10 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
               disabled={running}
               onChange={(n) => setSettings({ turns: n })}
             />
+            <p className="text-[11px] leading-relaxed text-muted-foreground">
+              Each critical rule gets its own scenario and this many turns. Adding a
+              rule adds a test. Max iterations is the runaway brake.
+            </p>
             <SliderRow
               label="Max iterations"
               value={settings.maxIterations}
