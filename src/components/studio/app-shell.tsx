@@ -76,6 +76,7 @@ export function AppShell() {
       settings: useEngineStore.getState().settings,
       parentSystem: useEngineStore.getState().parentPrompts.draft,
       parentFollowupSystem: useEngineStore.getState().parentPrompts.followup,
+      getLivePrompt: () => useEngineStore.getState().currentPrompt(),
       signal: ac.signal,
       onEvent: (event: EngineEvent) => {
         const store = useEngineStore.getState();

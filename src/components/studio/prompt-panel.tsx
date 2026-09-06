@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type Ref } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type Ref } from "react";
 import { ArrowLeft, Copy, Download, RotateCcw, Save, ScrollText, Undo2 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
-import { diffLines } from "@/lib/diff";
+import { LivePromptEditor } from "./live-prompt";
 import { copyText, downloadText, versionsMarkdown } from "@/lib/export-prompts";
 import { GOAL_MAX, GOAL_MIN, clampGoalHeight, fitGoalHeight } from "@/lib/goal";
 import { PARENT_PROMPT_CATALOG, type ParentPromptKey } from "@/lib/parent-protocol";
@@ -26,8 +26,10 @@ export function PromptPanel() {
   const iterations = useEngineStore((s) => s.iterations);
   const currentRev = useEngineStore((s) => s.currentRev);
   const viewingRev = useEngineStore((s) => s.viewingRev);
+  const promptDraft = useEngineStore((s) => s.promptDraft);
   const status = useEngineStore((s) => s.status);
   const setSeedPrompt = useEngineStore((s) => s.setSeedPrompt);
+  const setPromptDraft = useEngineStore((s) => s.setPromptDraft);
   const setViewingRev = useEngineStore((s) => s.setViewingRev);
   const restoreRev = useEngineStore((s) => s.restoreRev);
   const abandonCurrent = useEngineStore((s) => s.abandonCurrent);
@@ -40,14 +42,18 @@ export function PromptPanel() {
     versions.find((v) => v.rev === currentRev) ??
     null;
   const viewedScore = viewed ? scoreForRev(viewed.rev, viewed, iterations) : null;
-  const baseline = versions.reduce<PromptVersion | null>(
-    (best, v) => (best == null || v.rev < best.rev ? v : best),
-    null,
-  );
+  const previous =
+    viewed == null
+      ? null
+      : versions.reduce<PromptVersion | null>((best, v) => {
+          if (v.rev >= viewed.rev) return best;
+          if (best == null || v.rev > best.rev) return v;
+          return best;
+        }, null);
   const promptValue = viewed ? viewed.prompt : seedPrompt;
-  const canEditSeed = !running && versions.length === 0;
-  const showDiff =
-    Boolean(viewed && baseline && viewed.rev !== baseline.rev && viewed.prompt !== baseline.prompt);
+  const canEditSeed = versions.length === 0;
+  const editingCurrent = Boolean(viewed && viewed.rev === currentRev);
+  const draftValue = editingCurrent ? (promptDraft ?? viewed!.prompt) : promptValue;
 
   useEffect(() => {
     activeChip.current?.scrollIntoView({ behavior: "smooth", inline: "nearest", block: "nearest" });
@@ -183,8 +189,21 @@ export function PromptPanel() {
               placeholder="Leave blank and Parent will draft the first system prompt."
               className="min-h-56 font-mono text-[13px] leading-relaxed bg-card"
             />
-          ) : showDiff && viewed && baseline ? (
-            <PromptDiff before={baseline.prompt} after={viewed.prompt} fromRev={baseline.rev} toRev={viewed.rev} />
+          ) : viewed ? (
+            <LivePromptEditor
+              baseline={editingCurrent ? viewed.prompt : (previous?.prompt ?? "")}
+              value={draftValue}
+              onChange={editingCurrent ? setPromptDraft : undefined}
+              fromLabel={
+                editingCurrent ? `v${viewed.rev}` : previous ? `v${previous.rev}` : "∅"
+              }
+              toLabel={
+                editingCurrent && promptDraft != null && promptDraft !== viewed.prompt
+                  ? "edit"
+                  : `v${viewed.rev}`
+              }
+              editable={editingCurrent}
+            />
           ) : (
             <pre className="min-h-56 whitespace-pre-wrap rounded-md bg-card p-3 font-mono text-[13px] leading-relaxed text-foreground shadow-[var(--shadow-border)]">
               {promptValue || "Leave blank and Parent will draft the first system prompt."}
@@ -194,8 +213,9 @@ export function PromptPanel() {
             <p className="mt-3 text-xs leading-relaxed text-muted-foreground">{viewed.rationale}</p>
           ) : (
             <p className="mt-3 text-xs text-muted-foreground">
-              Parent owns this prompt once a run starts. Restore or abandon any revision from the
-              timeline — Parent sees every full prompt and its score.
+              Edit this prompt any time — added lines go green, dropped lines sit in red above.
+              Parent sees unified diffs of each revision, not the full history. A pending edit is
+              absorbed at the next iteration.
             </p>
           )}
         </div>
@@ -328,47 +348,6 @@ function GoalField({ running }: { running: boolean }) {
         onDoubleClick={fit}
         onKeyDown={onKeyDown}
       />
-    </div>
-  );
-}
-
-function PromptDiff({
-  before,
-  after,
-  fromRev,
-  toRev,
-}: {
-  before: string;
-  after: string;
-  fromRev: number;
-  toRev: number;
-}) {
-  const ops = useMemo(() => diffLines(before, after), [before, after]);
-  return (
-    <div>
-      <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-        Diff v{fromRev} → v{toRev}
-        <span className="ml-2 normal-case tracking-normal">
-          <span className="text-ok">green added</span>
-          <span className="mx-1 text-muted-foreground">·</span>
-          <span className="text-destructive">red removed</span>
-        </span>
-      </p>
-      <pre className="min-h-56 overflow-x-auto whitespace-pre-wrap rounded-md bg-card p-3 font-mono text-[13px] leading-relaxed shadow-[var(--shadow-border)]">
-        {ops.map((op, i) => (
-          <span
-            key={`${op.type}-${i}-${op.text.slice(0, 24)}`}
-            className={cn(
-              "block",
-              op.type === "add" && "bg-ok/15 text-ok",
-              op.type === "del" && "bg-destructive/15 text-destructive",
-            )}
-          >
-            {op.type === "add" ? "+ " : op.type === "del" ? "− " : "  "}
-            {op.text || " "}
-          </span>
-        ))}
-      </pre>
     </div>
   );
 }

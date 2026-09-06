@@ -55,6 +55,7 @@ export type EngineInput = {
   parentFollowupSystem: string;
   signal: AbortSignal;
   onEvent: (event: EngineEvent) => void;
+  getLivePrompt?: () => string;
 };
 
 function throwIfAborted(signal: AbortSignal) {
@@ -276,9 +277,25 @@ export async function runEngine(input: EngineInput) {
 
   const currentOf = () => versions.find((v) => v.rev === currentRev);
 
+  const absorbUserEdit = () => {
+    const live = input.getLivePrompt?.().trim() ?? "";
+    const cur = currentOf()?.prompt ?? "";
+    if (!live || live === cur) return;
+    emitVersion({
+      rev: nextRev,
+      prompt: live,
+      rationale: "User edit",
+      score: null,
+      status: "draft",
+      createdAt: Date.now(),
+      parentRev: currentRev,
+    });
+  };
+
   try {
     for (let i = 1; i <= settings.maxIterations; i++) {
       throwIfAborted(signal);
+      absorbUserEdit();
       const iterStarted = performance.now();
       let parentMs = 0;
       let childMs = 0;
@@ -322,7 +339,7 @@ export async function runEngine(input: EngineInput) {
         const cur = currentOf();
         reply = await parentCall(
           input,
-          `GOAL:\n${goal}\n\nCURRENT SYSTEM PROMPT (rev ${cur?.rev}):\n${cur?.prompt ?? ""}\n\nREVISION LOG (full prompts + scores, oldest → newest):\n${historyBrief(versions)}\n\n${killFocusBlock(false, ledger)}\n\nDesign scenarios only for FAIL or new rules. Each of those gets ${settings.turns} turns. action should be "draft". Keep system_prompt unless it is clearly broken or scores have stalled. Only the FIRST user turn per scenario is required.`,
+          `GOAL:\n${goal}\n\nCURRENT SYSTEM PROMPT (rev ${cur?.rev}):\n${cur?.prompt ?? ""}\n\nREVISION LOG (unified diffs + scores, oldest → newest):\n${historyBrief(versions)}\n\n${killFocusBlock(false, ledger)}\n\nDesign scenarios only for FAIL or new rules. Each of those gets ${settings.turns} turns. action should be "draft". Keep system_prompt unless it is clearly broken or scores have stalled. Only the FIRST user turn per scenario is required.`,
           (text) => onEvent({ type: "parent-delta", text }),
         );
         pendingScenarios = focusScenarios(mergeScenarios(reply.scenarios, lastPlanned), ledger, false);
@@ -340,6 +357,7 @@ export async function runEngine(input: EngineInput) {
       }
       parentMs += performance.now() - tParent;
 
+      absorbUserEdit();
       const active = currentOf();
       const promptText = active?.prompt ?? "";
       if (!promptText) throw new Error("No system prompt to test");
@@ -382,7 +400,7 @@ export async function runEngine(input: EngineInput) {
       try {
         judged = await parentCall(
           input,
-          `GOAL:\n${goal}\n\nCURRENT SYSTEM PROMPT (rev ${currentRev}):\n${promptText}\n\nREVISION LOG (full prompts + scores, oldest → newest). Use it to see whether you are improving or degrading:\n${historyBrief(versions)}\n\nCHILD TRANSCRIPTS:\n${transcriptBlock(results)}\n\n${killFocusBlock(killed, ledger)}\n\nScore 1–10. If score >= ${settings.targetScore} AND there was no [ENGINE KILL], action="pass". If this score is below the best in the log, prefer action="revert" to that rev or a real rewrite — not a tiny edit of a loser. Otherwise revise the FULL system prompt. Fill rule_ledger. Only schedule scenarios for FAIL or new rules. Only the FIRST user turn per scenario is required.`,
+          `GOAL:\n${goal}\n\nCURRENT SYSTEM PROMPT (rev ${currentRev}):\n${promptText}\n\nREVISION LOG (unified diffs + scores, oldest → newest). Read the diffs to see whether you are improving or degrading:\n${historyBrief(versions)}\n\nCHILD TRANSCRIPTS:\n${transcriptBlock(results)}\n\n${killFocusBlock(killed, ledger)}\n\nScore 1–10. If score >= ${settings.targetScore} AND there was no [ENGINE KILL], action="pass". If this score is below the best in the log, prefer action="revert" to that rev or a real rewrite — not a tiny edit of a loser. Otherwise revise the FULL system prompt. Fill rule_ledger. Only schedule scenarios for FAIL or new rules. Only the FIRST user turn per scenario is required.`,
           (text) => onEvent({ type: "parent-delta", text }),
         );
       } catch (err) {

@@ -126,7 +126,7 @@ describe("isOverlayScenarioName", () => {
 });
 
 describe("historyBrief", () => {
-  it("includes every full prompt, its score, and the trend", () => {
+  it("sends unified diffs and scores, not every full prompt", () => {
     const versions: PromptVersion[] = [
       {
         rev: 1,
@@ -150,8 +150,11 @@ describe("historyBrief", () => {
     const brief = historyBrief(versions);
     assert.match(brief, /Score path: 6 → 4 \(degrading/);
     assert.match(brief, /Best so far: rev 1 at 6\/10/);
-    assert.match(brief, /system prompt v1 \[tested\]:\nBe helpful\.\nAlways\.\nscore: 6\/10/);
-    assert.match(brief, /system prompt v2 \[tested\]:\nBe terse\.\nscore: 4\/10/);
+    assert.match(brief, /v1 \[tested\] score 6\/10 \(initial/);
+    assert.match(brief, /v1 → v2 \[tested\] score 4\/10/);
+    assert.match(brief, /--- v1/);
+    assert.match(brief, /\+Be terse\./);
+    assert.doesNotMatch(brief, /system prompt v1 \[tested\]:\nBe helpful/);
     assert.equal(historyBrief([]), "(none yet)");
   });
 });

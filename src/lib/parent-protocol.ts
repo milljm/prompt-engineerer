@@ -3,6 +3,7 @@
  * a (sometimes messy) Parent reply into a typed revision + test plan.
  */
 
+import { unifiedDiff } from "./diff.ts";
 import { SCENARIOS_MAX, type PromptVersion, type RuleRecord, type ScenarioSpec } from "./types.ts";
 import { parseLedger } from "./rule-ledger.ts";
 
@@ -16,7 +17,7 @@ Return ONLY a JSON object. No markdown fences. No prose outside JSON.
 Rules:
 - system_prompt must be the FULL prompt, never a diff or "add this line".
 - Scores: 1 = useless, 5 = mixed, 8 = reliably good, 10 = holds under multi-turn pressure.
-- You are given EVERY prior revision: the full system prompt and its score. Read the trend.
+- You are given the CURRENT full system prompt plus a REVISION LOG of unified diffs (vN → vN+1) with scores. Read the diffs and the trend. Historical prompts are NOT reprinted in full.
 - Your job is to IMPROVE quality every iteration. If scores are dropping, you are going the wrong way — revert to the best rev or try a structurally different approach. Do not nibble at a failing prompt.
 - Prefer surgical edits over rewrites unless the prompt is structurally wrong or scores have stalled.
 - If an earlier revision scored higher, strongly consider reverting (action="revert", revert_to=<rev>).
@@ -228,10 +229,16 @@ export function scoreTrend(versions: PromptVersion[]): string {
 export function historyBrief(versions: PromptVersion[]): string {
   if (!versions.length) return "(none yet)";
   const ordered = [...versions].sort((a, b) => a.rev - b.rev);
-  const blocks = ordered.map((v) => {
+  const blocks = ordered.map((v, i) => {
     const score = v.score == null ? "unscored" : `${v.score}/10`;
     const note = v.rationale.trim() ? `\nnote: ${v.rationale.trim()}` : "";
-    return `system prompt v${v.rev} [${v.status}]:\n${v.prompt.trim() || "(empty)"}\nscore: ${score}${note}`;
+    if (i === 0) {
+      return `v${v.rev} [${v.status}] score ${score} (initial — full text is CURRENT SYSTEM PROMPT if this is still current)${note}`;
+    }
+    const prev = ordered[i - 1];
+    if (!prev) return `v${v.rev} [${v.status}] score ${score}${note}`;
+    const diff = unifiedDiff(prev.prompt, v.prompt, `v${prev.rev}`, `v${v.rev}`);
+    return `v${prev.rev} → v${v.rev} [${v.status}] score ${score}${note}\n${diff}`;
   });
   return `${scoreTrend(ordered)}\n---\n${blocks.join("\n---\n")}`;
 }
