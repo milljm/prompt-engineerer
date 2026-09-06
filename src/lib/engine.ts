@@ -6,7 +6,7 @@
  * until the target score, the iteration budget, or Stop.
  */
 
-import { childKillStamp, estimateTokens, stripKillStamp, wasKilled } from "./child-cap";
+import { childKillStamp, completionUsed, stripKillStamp, wasKilled } from "./child-cap";
 import { extractJsonObject } from "./json";
 import { chat, stopLocal } from "./inference";
 import { isBrowserDirectUrl } from "./openai-url";
@@ -239,7 +239,7 @@ async function runScenarios(
         onDelta: (text) => onEvent({ type: "live", event: { type: "child-delta", text } }),
       });
       let assistant = reply.text || "(empty reply)";
-      const used = reply.usage?.completion ?? estimateTokens(assistant);
+      const used = completionUsed(assistant, reply.usage);
       if (reply.killed || used >= settings.childMaxTokens) {
         const stamp = childKillStamp(settings.childMaxTokens, used);
         assistant += stamp;
@@ -291,7 +291,7 @@ export async function runEngine(input: EngineInput) {
   let pendingScenarios: ScenarioSpec[] | null = null;
   let lastPlanned: ScenarioSpec[] = [];
   let ledger: RuleRecord[] = [...(input.ledger ?? [])];
-  let lastResults: ScenarioResult[] = [...(input.priorResults ?? [])];
+  let lastResults: ScenarioResult[] = [];
 
   const emitVersion = (version: PromptVersion) => {
     versions = [...versions, version];
