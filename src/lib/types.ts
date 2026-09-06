@@ -4,6 +4,7 @@
  */
 
 import { clampChildMaxTokens, CHILD_TOKENS_DEFAULT } from "./child-cap.ts";
+import { GOAL_DEFAULT, clampGoalHeight } from "./goal.ts";
 import { SIDEBAR_DEFAULT, clampSidebarWidth } from "./sidebar.ts";
 
 /** A chat model listed by an OpenAI-compatible `/v1/models` endpoint. */
@@ -109,6 +110,7 @@ export type Settings = {
   sidebarWidth: number;
   sidebarAuto: boolean;
   sidebarCollapsed: boolean;
+  goalHeight: number;
 };
 
 /** Pre-v2 persisted settings that still used the Edge/xAI backend picker. */
@@ -136,6 +138,7 @@ export const DEFAULT_SETTINGS: Settings = {
   sidebarWidth: SIDEBAR_DEFAULT,
   sidebarAuto: true,
   sidebarCollapsed: false,
+  goalHeight: GOAL_DEFAULT,
 };
 
 export const DEFAULT_GOAL =
@@ -161,5 +164,6 @@ export function migrateSettings(raw: LegacySettings | undefined): Settings {
     sidebarWidth: clampSidebarWidth(src.sidebarWidth ?? DEFAULT_SETTINGS.sidebarWidth),
     sidebarAuto: src.sidebarAuto !== false,
     sidebarCollapsed: src.sidebarCollapsed === true,
+    goalHeight: clampGoalHeight(src.goalHeight ?? DEFAULT_SETTINGS.goalHeight),
   };
 }

@@ -275,6 +275,45 @@ html[data-theme="light"] {
     outline: none;
   }
 
+  .goal-resizer {
+    position: absolute;
+    right: 8px;
+    bottom: 0;
+    left: 8px;
+    z-index: 2;
+    height: 10px;
+    cursor: row-resize;
+    touch-action: none;
+  }
+
+  .goal-resizer::after {
+    content: "";
+    position: absolute;
+    top: 4px;
+    right: 30%;
+    left: 30%;
+    height: 2px;
+    border-radius: 1px;
+    background-color: transparent;
+    transition: background-color var(--motion-quick) var(--ease-smooth-out);
+  }
+
+  .goal-resizer:hover::after,
+  .goal-resizer:focus-visible::after,
+  .goal-resizer[data-active="true"]::after {
+    background-color: var(--pe-hot);
+  }
+
+  .goal-resizer:focus-visible {
+    outline: none;
+  }
+
+  html.is-goal-resizing,
+  html.is-goal-resizing * {
+    cursor: row-resize !important;
+    user-select: none !important;
+  }
+
   .chip-scroll {
     scrollbar-width: thin;
     scrollbar-color: color-mix(in oklab, var(--pe-fg) 28%, transparent) transparent;

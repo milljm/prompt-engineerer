@@ -54,6 +54,11 @@ describe("migrateSettings", () => {
     assert.equal(migrateSettings({}).sidebarCollapsed, false);
     assert.equal(migrateSettings({ sidebarCollapsed: true }).sidebarCollapsed, true);
   });
+
+  it("fills a missing goal height and clamps a huge one", () => {
+    assert.equal(migrateSettings({}).goalHeight, DEFAULT_SETTINGS.goalHeight);
+    assert.ok(migrateSettings({ goalHeight: 4000 }).goalHeight < 4000);
+  });
 });
 
 describe("clampTurns", () => {

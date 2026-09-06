@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type Ref } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type Ref } from "react";
 import { ArrowLeft, Copy, Download, RotateCcw, Save, ScrollText, Undo2 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -7,6 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { diffLines } from "@/lib/diff";
 import { copyText, downloadText, versionsMarkdown } from "@/lib/export-prompts";
+import { GOAL_MAX, GOAL_MIN, clampGoalHeight, fitGoalHeight } from "@/lib/goal";
 import { PARENT_PROMPT_CATALOG, type ParentPromptKey } from "@/lib/parent-protocol";
 import { useEngineStore } from "@/lib/store";
 import type { IterationRecord, PromptVersion } from "@/lib/types";
@@ -20,14 +21,12 @@ function scoreForRev(rev: number, version: PromptVersion | undefined, iterations
 
 export function PromptPanel() {
   const [pane, setPane] = useState<"child" | "parent">("child");
-  const goal = useEngineStore((s) => s.goal);
   const seedPrompt = useEngineStore((s) => s.seedPrompt);
   const versions = useEngineStore((s) => s.versions);
   const iterations = useEngineStore((s) => s.iterations);
   const currentRev = useEngineStore((s) => s.currentRev);
   const viewingRev = useEngineStore((s) => s.viewingRev);
   const status = useEngineStore((s) => s.status);
-  const setGoal = useEngineStore((s) => s.setGoal);
   const setSeedPrompt = useEngineStore((s) => s.setSeedPrompt);
   const setViewingRev = useEngineStore((s) => s.setViewingRev);
   const restoreRev = useEngineStore((s) => s.restoreRev);
@@ -77,24 +76,7 @@ export function PromptPanel() {
             Parent prompts
           </Button>
         </div>
-        <div className="relative mt-2">
-          <Textarea
-            value={goal}
-            disabled={running}
-            onChange={(e) => setGoal(e.target.value)}
-            aria-label="Desired behavior"
-            className={cn("min-h-28 bg-card", !goal.trim() && "caret-foreground text-transparent")}
-          />
-          {!goal.trim() ? (
-            <div className="pointer-events-none absolute inset-0 overflow-hidden px-3 py-3">
-              <p className="font-display text-lg italic leading-tight text-foreground">Ready to forge</p>
-              <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-                Describe the behavior you want. Parent drafts a system prompt, throws scenarios at
-                Child — including extra turns — then scores the result and iterates.
-              </p>
-            </div>
-          ) : null}
-        </div>
+        <GoalField running={running} />
       </header>
 
       <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2 md:px-5">
@@ -218,6 +200,134 @@ export function PromptPanel() {
           )}
         </div>
       </ScrollArea>
+    </div>
+  );
+}
+
+function GoalField({ running }: { running: boolean }) {
+  const goal = useEngineStore((s) => s.goal);
+  const setGoal = useEngineStore((s) => s.setGoal);
+  const height = useEngineStore((s) => s.settings.goalHeight);
+  const setSettings = useEngineStore((s) => s.setSettings);
+  const area = useRef<HTMLTextAreaElement>(null);
+  const drag = useRef<{ startY: number; startH: number } | null>(null);
+  const liveRef = useRef<number | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const [liveHeight, setLiveHeight] = useState<number | null>(null);
+  const display = liveHeight ?? height;
+  const empty = !goal.trim();
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("is-goal-resizing", dragging);
+    return () => document.documentElement.classList.remove("is-goal-resizing");
+  }, [dragging]);
+
+  function measure(): number {
+    const el = area.current;
+    if (!el) return height;
+    const prev = el.style.height;
+    el.style.height = "0px";
+    const next = fitGoalHeight(el.scrollHeight + 8);
+    el.style.height = prev;
+    return next;
+  }
+
+  function growToContent() {
+    const next = measure();
+    if (next > height) setSettings({ goalHeight: next });
+  }
+
+  function fit() {
+    setSettings({ goalHeight: measure() });
+  }
+
+  function onChange(value: string) {
+    setGoal(value);
+    requestAnimationFrame(growToContent);
+  }
+
+  function onPointerDown(event: PointerEvent<HTMLDivElement>) {
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    drag.current = { startY: event.clientY, startH: display };
+    liveRef.current = display;
+    setDragging(true);
+  }
+
+  function onPointerMove(event: PointerEvent<HTMLDivElement>) {
+    const session = drag.current;
+    if (!session) return;
+    const next = clampGoalHeight(session.startH + event.clientY - session.startY);
+    liveRef.current = next;
+    setLiveHeight(next);
+  }
+
+  function onPointerUp(event: PointerEvent<HTMLDivElement>) {
+    const next = liveRef.current;
+    drag.current = null;
+    liveRef.current = null;
+    setDragging(false);
+    setLiveHeight(null);
+    if (next != null && next !== height) setSettings({ goalHeight: next });
+    event.currentTarget.releasePointerCapture(event.pointerId);
+  }
+
+  function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setSettings({ goalHeight: clampGoalHeight(height - 16) });
+    } else if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setSettings({ goalHeight: clampGoalHeight(height + 16) });
+    } else if (event.key === "Home" || event.key === "Enter") {
+      event.preventDefault();
+      fit();
+    }
+  }
+
+  return (
+    <div className="relative mt-2 pb-2">
+      <Textarea
+        ref={area}
+        value={goal}
+        disabled={running}
+        onChange={(e) => onChange(e.target.value)}
+        aria-label="Desired behavior"
+        style={{ height: display }}
+        className={cn(
+          "min-h-28 overflow-y-auto bg-card",
+          empty && "caret-foreground text-transparent",
+        )}
+      />
+      {empty ? (
+        <div
+          className="pointer-events-none absolute inset-x-0 top-0 overflow-hidden px-3 py-3"
+          style={{ height: display }}
+        >
+          <p className="font-display text-lg italic leading-tight text-foreground">Ready to forge</p>
+          <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+            Describe the behavior you want. Parent drafts a system prompt, throws scenarios at
+            Child — including extra turns — then scores the result and iterates.
+          </p>
+        </div>
+      ) : null}
+      <div
+        role="separator"
+        aria-orientation="horizontal"
+        aria-label="Resize what you want"
+        aria-valuemin={GOAL_MIN}
+        aria-valuemax={GOAL_MAX}
+        aria-valuenow={display}
+        tabIndex={0}
+        className="goal-resizer"
+        data-active={dragging ? "true" : "false"}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+        onDoubleClick={fit}
+        onKeyDown={onKeyDown}
+      />
     </div>
   );
 }
