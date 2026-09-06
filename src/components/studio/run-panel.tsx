@@ -327,7 +327,11 @@ function IterationCard({ record, defaultOpen }: { record: IterationRecord; defau
           {record.rationale}
         </p>
       ) : null}
-      {record.ledger?.length ? (
+      {judging ? (
+        <p className="mt-2 text-[11px] text-muted-foreground">
+          Rule chips wait for this score. Last loop’s fails are not this transcript.
+        </p>
+      ) : record.ledger?.length ? (
         <div className="mt-2 flex flex-wrap gap-1.5">
           {record.ledger.map((row) => (
             <Badge key={row.name} variant={row.verdict === "pass" ? "ok" : "child"}>
