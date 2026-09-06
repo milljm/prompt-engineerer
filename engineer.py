@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import os
 import shutil
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -90,8 +91,34 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def stop_child(proc: subprocess.Popen[bytes] | None) -> None:
+    """Send SIGINT (or terminate on Windows), then kill if the child hangs.
+
+    Args:
+        proc: The running child, or ``None`` if it never started.
+    """
+    if proc is None or proc.poll() is not None:
+        return
+    try:
+        if os.name == "nt":
+            proc.terminate()
+        else:
+            proc.send_signal(signal.SIGINT)
+        proc.wait(timeout=8)
+    except (subprocess.TimeoutExpired, KeyboardInterrupt):
+        proc.kill()
+        try:
+            proc.wait(timeout=3)
+        except (subprocess.TimeoutExpired, KeyboardInterrupt, OSError):
+            pass
+    except OSError:
+        pass
+
+
 def run_command(cmd: list[str], extra: list[str] | None = None, cwd: Path | None = None) -> int:
     """Run *cmd* in *cwd* and return its exit code.
+
+    Ctrl-C stops the child and returns 130 instead of dumping a traceback.
 
     Args:
         cmd: Executable plus arguments.
@@ -101,8 +128,20 @@ def run_command(cmd: list[str], extra: list[str] | None = None, cwd: Path | None
     full = list(cmd)
     if extra:
         full.extend(extra)
-    proc = subprocess.run(full, cwd=ROOT if cwd is None else cwd, env=os.environ.copy(), check=False)
-    return int(proc.returncode)
+    proc: subprocess.Popen[bytes] | None = None
+    try:
+        # Own process group so Ctrl-C hits us first; we then stop the child.
+        proc = subprocess.Popen(  # pylint: disable=consider-using-with
+            full,
+            cwd=ROOT if cwd is None else cwd,
+            env=os.environ.copy(),
+            start_new_session=True,
+        )
+        return int(proc.wait())
+    except KeyboardInterrupt:
+        stop_child(proc)
+        print("\nStopped.", file=sys.stderr)
+        return 130
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -124,13 +163,20 @@ def main(argv: list[str] | None = None) -> int:
         if code:
             return code
     extras = args.extra if args.command != "ci" else None
-    for cmd in commands_for(args.command):
-        print(f"→ {' '.join(cmd)}")
-        code = run_command(cmd, extras)
-        if code:
-            return code
+    try:
+        for cmd in commands_for(args.command):
+            print(f"→ {' '.join(cmd)}")
+            code = run_command(cmd, extras)
+            if code:
+                return code
+    except KeyboardInterrupt:
+        print("\nStopped.", file=sys.stderr)
+        return 130
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        sys.exit(130)
