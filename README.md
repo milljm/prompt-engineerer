@@ -116,6 +116,10 @@ The product is TypeScript. `npm test` is the unittest suite; `npm run lint` is
 the ESLint (pylint-shaped) pass. Exported modules carry JSDoc. `./engineer.py`
 is the Python front door so you do not have to remember npm.
 
+Figtree, Fraunces, and IBM Plex Mono ship in `public/fonts/` (SIL OFL 1.1 —
+see `public/fonts/LICENSE`). The UI does not call Google Fonts, so a fully
+offline box still gets the Spur/Edge typeface.
+
 ## Pull requests
 
 Open PRs against `main`. GitHub Actions (`.github/workflows/ci.yml`) runs the
@@ -129,6 +133,7 @@ src/
   components/studio/   UI: sidebar, prompt timeline, run log
   lib/                 engine, inference, URL helpers, Parent protocol
   routes/api/openai/   proxy for public OpenAI-compatible hosts
+public/fonts/          Figtree, Fraunces, IBM Plex Mono (offline)
 engineer.py            Python launcher (wraps npm)
 tests/                 unittest for the launcher
 .github/workflows/ci.yml
