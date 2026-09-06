@@ -36,8 +36,10 @@ SCENARIO BUDGET — two kinds of rules:
 - Turns are PER BEHAVIOR SCENARIO. Each of those gets the full requested turn count.
 - You may emit up to 20 behavior scenarios. Max iterations stops a runaway run.
 - Each scenario needs a strong FIRST user turn that pressures that behavior. Later turns are written live; still include fallback follow-ups.
-- Each turns[].user is spoken TO Child, as a real user would.
-- Never put tester notes in turns[].user. Forbidden: "probe", "system prompt", "in-character", "follow up: probe", "act as a user", "test whether", "stay under N words". Those leak into Child's context.
+- Each turns[].user is spoken TO Child, as a real user or player in the scene — never as a director or tester.
+- The system prompt is the ONLY leash. User lines must never hint at rules you put in the system prompt. If Child must stay in role, that belongs in system_prompt, not in the user message.
+- Never put tester notes in turns[].user. Forbidden: "probe", "system prompt", "in-character", "stay in role", "stay in character", "harder case", "do it again", "follow up: probe", "act as a user", "test whether", "stay under N words", "be concise", "remember you are", "don't dump". Those leak into Child's context and coach the thing you are trying to measure.
+- Raise difficulty in-world (walk into danger, try to make Child speak for the player, offer OOC chat). Do not give stage directions to Child.
 - Do not write a user line whose only job is to make Child write a long essay so you can count words. Count words on the replies you already have.
 - When action is "pass", keep the current system_prompt and set pass=true.
 - When judging, you MUST include score (integer 1–10) and either pass, revise, or revert. Mention overlay failures (length, format, ENGINE KILL) in rationale even if the behavior scene otherwise passed.
@@ -58,21 +60,24 @@ JSON shape:
 /** Short protocol for a live follow-up turn after Child replies. */
 export const PARENT_FOLLOWUP_SYSTEM = `You are Parent. Child just replied in a live test. Write the NEXT user message spoken TO Child.
 
+You are not a director. You are not a tester. You are the human in the scene (player, customer, coworker — whoever the first turn established). The ONLY leash on Child is the system prompt. Your user line must never remind Child of rules, role, length, format, or persona.
+
 Return ONLY a JSON object. No markdown. No prose outside JSON.
 JSON strings use double quotes. Apostrophes are bare: write "don't", never "don\\'t".
 
 {
   "continue": true,
-  "user": "a real user follow-up, in character"
+  "user": "what the human in the scene actually says or does"
 }
 
 Rules:
-- Stay on THIS scenario's *behavior* rule. Do not switch the scene into a word-count test.
-- Overlay constraints (length, format, tone) are judged later on this same reply. You do not need a special follow-up just to measure them.
-- user is spoken TO Child. Never mention system prompts, probes, tests, word limits, or "in-character".
-- Poke whatever Child just got wrong on the behavior (agency, persona, refusal, a dodge). If Child did well, raise the difficulty on the same behavior.
-- continue=false (and user="") only if another turn would add nothing.
-- Keep user to 1–3 sentences.`;
+- Stay on THIS scenario's *behavior* by what you DO in the world. Do not switch the scene into a word-count test.
+- Overlay constraints (length, format, tone) are judged later on this same reply. Do not mention them.
+- user is spoken TO Child as that human. Never mention system prompts, probes, tests, word limits, "in-character", "stay in role", "harder case", or "don't dump".
+- Pressure a miss in-world (talk over Child if it stole your agency, walk into the next room, ignore a question). If Child did well, raise the stakes in the scene — not with stage directions.
+- continue=false (and user="") only if another beat would add nothing.
+- Keep user to 1–3 sentences of in-world speech or action.`;
+
 
 export type ParentAction = "draft" | "revise" | "revert" | "pass";
 
@@ -104,32 +109,44 @@ export function isMetaUserTurn(text: string): boolean {
     /follow up in-character/i.test(t) ||
     /realistic first request that tests/i.test(t) ||
     /violate the intended behavior/i.test(t) ||
-    /^follow up:\s*probe\b/i.test(t) ||
+    /^follow up:\s*/i.test(t) ||
     /stay under \d+ words/i.test(t) ||
-    /write (me )?(a |an )?(long |huge )?(essay|story|novel)/i.test(t)
+    /write (me )?(a |an )?(long |huge )?(essay|story|novel)/i.test(t) ||
+    /stay in (role|character|persona)/i.test(t) ||
+    /\bin-character\b/i.test(t) ||
+    /\bharder case\b/i.test(t) ||
+    /\braise the difficulty\b/i.test(t) ||
+    /do it again.{0,80}(harder|role|character|case)/i.test(t) ||
+    /\bdon't dump\b/i.test(t) ||
+    /\bsystem prompt\b/i.test(t) ||
+    /\btest whether\b/i.test(t) ||
+    /remember (you are|your role|the rules)/i.test(t) ||
+    /don't (break|leave) character/i.test(t) ||
+    /\bbe concise\b/i.test(t) ||
+    /\bword limit\b/i.test(t) ||
+    /next small step only/i.test(t) ||
+    /answer what i asked first/i.test(t) ||
+    /don't start over/i.test(t) ||
+    /\bas an? (ai|assistant|language model)\b/i.test(t)
   );
 }
 
 const SCENE_OPENS = [
   "I step inside and look around. What do I see?",
-  "I wait by the door. What happens next?",
-  "I sit down. Anyone approaching?",
-  "I keep my voice low. What's the move?",
+  "I wait by the door. Anyone notice me?",
+  "I sit down and catch her eye.",
+  "I keep my voice low. \"We need to talk.\"",
 ];
 
 const FOLLOW_UPS = [
-  "I stay in the scene. What happens next?",
-  "Still here. Next small step only.",
-  "Do it again for a slightly harder case. Stay in role.",
-  "Answer what I asked first, nothing else.",
+  "I glance around. \"Well?\"",
+  "I take a step closer. \"Go on.\"",
+  "I wait, arms folded.",
+  "\"And then?\"",
 ];
 
 export function inCharacterFollowUp(seed: string, index: number): string {
-  const clipped = seed.replace(/\s+/g, " ").trim().slice(0, 140);
-  if (!clipped) return SCENE_OPENS[index % SCENE_OPENS.length];
-  if (index === 0) {
-    return `That wasn't enough. Going back to: "${clipped}" — continue, don't restart.`;
-  }
+  if (!seed.replace(/\s+/g, " ").trim()) return SCENE_OPENS[index % SCENE_OPENS.length];
   return FOLLOW_UPS[index % FOLLOW_UPS.length];
 }
 

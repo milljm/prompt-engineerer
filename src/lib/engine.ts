@@ -115,7 +115,7 @@ async function parentFollowUp(
 ): Promise<{ kind: "next"; user: string } | { kind: "stop" } | { kind: "fail" }> {
   const { settings, signal, onEvent } = input;
   onEvent({ type: "parent-delta", text: "" });
-  const user = `GOAL:\n${prompt.goal}\n\nSCENARIO: ${prompt.scenario}\nYou are writing user turn ${prompt.turn} of ${prompt.of}. Stay on this rule.\n\nCHILD SYSTEM PROMPT:\n${prompt.systemPrompt}\n\nTRANSCRIPT SO FAR:\n${prompt.transcript}\n\nWrite the next user message to Child. JSON only.`;
+  const user = `GOAL:\n${prompt.goal}\n\nSCENARIO: ${prompt.scenario}\nYou are writing user turn ${prompt.turn} of ${prompt.of}. Speak as the human in the scene. Do not mention rules, role, or the system prompt.\n\nCHILD SYSTEM PROMPT:\n${prompt.systemPrompt}\n\nTRANSCRIPT SO FAR:\n${prompt.transcript}\n\nWrite the next in-world user line to Child. JSON only.`;
   try {
     const result = await chat({
       apiUrl: settings.apiUrl,
