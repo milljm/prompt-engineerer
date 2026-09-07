@@ -329,7 +329,7 @@ function IterationCard({ record, defaultOpen }: { record: IterationRecord; defau
       ) : null}
       {judging ? (
         <p className="mt-2 text-[11px] text-muted-foreground">
-          Rule chips wait for this score. Last loop’s fails are not this transcript.
+          Waiting for judgement...
         </p>
       ) : record.ledger?.length ? (
         <div className="mt-2 flex flex-wrap gap-1.5">
