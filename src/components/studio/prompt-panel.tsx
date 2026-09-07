@@ -205,15 +205,6 @@ export function PromptPanel() {
               {promptValue || "Leave blank and Parent will draft the first system prompt."}
             </pre>
           )}
-          {viewed?.rationale ? (
-            <p className="mt-3 shrink-0 text-xs leading-relaxed text-muted-foreground">{viewed.rationale}</p>
-          ) : (
-            <p className="mt-3 shrink-0 text-xs text-muted-foreground">
-              Edit this prompt any time — added lines go green, dropped lines sit in red above.
-              Parent sees unified diffs of each revision, not the full history. A pending edit is
-              absorbed at the next iteration.
-            </p>
-          )}
         </div>
     </div>
   );
@@ -485,4 +476,3 @@ function ParentPromptsPane({ onBack, running }: { onBack: () => void; running: b
     </div>
   );
 }
-

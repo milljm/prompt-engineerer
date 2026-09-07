@@ -73,33 +73,53 @@ async function parentCall(
   input: EngineInput,
   user: string,
   onDelta: (t: string) => void,
+  opts?: { requireScore?: boolean },
 ): Promise<ParentReply> {
   const { settings, signal } = input;
-  const run = async (nudge?: string) => {
-    onDelta("");
-    const messages: ChatMessage[] = [
-      { role: "system", content: input.parentSystem },
-      { role: "user", content: nudge ? `${user}\n\n${nudge}` : user },
-    ];
-    const result = await chat({
-      apiUrl: settings.apiUrl,
-      apiKey: settings.apiKey,
-      model: settings.parentModel,
-      messages,
-      temperature: 0.35,
-      maxTokens: 8192,
-      signal,
-      onDelta,
-    });
-    return parseParentReply(extractJsonObject(result.text), settings.turns);
-  };
-
-  try {
-    return await run();
-  } catch (err) {
-    if (err instanceof DOMException && err.name === "AbortError") throw err;
-    return run("Your previous reply was not valid JSON. Return ONLY the JSON object. Apostrophes must be bare: write don't, never don\\'t. Emit one FIRST user turn per scenario — later turns are written live.");
+  const attempts = 4;
+  let lastErr: unknown;
+  for (let n = 0; n < attempts; n++) {
+    throwIfAborted(signal);
+    const nudge =
+      n === 0
+        ? undefined
+        : [
+            "Your previous reply was not valid JSON or omitted required fields.",
+            "Return ONLY the JSON object. Apostrophes must be bare: write don't, never don\\'t.",
+            "Emit one FIRST user turn per scenario — later turns are written live.",
+            opts?.requireScore
+              ? 'Judging replies MUST set "score" to an integer 1-10 and "action" to pass, revise, or revert. score must not be null.'
+              : "",
+          ]
+            .filter(Boolean)
+            .join(" ");
+    try {
+      onDelta("");
+      const messages: ChatMessage[] = [
+        { role: "system", content: input.parentSystem },
+        { role: "user", content: nudge ? `${user}\n\n${nudge}` : user },
+      ];
+      const result = await chat({
+        apiUrl: settings.apiUrl,
+        apiKey: settings.apiKey,
+        model: settings.parentModel,
+        messages,
+        temperature: 0.35,
+        maxTokens: 8192,
+        signal,
+        onDelta,
+      });
+      const reply = parseParentReply(extractJsonObject(result.text), settings.turns);
+      if (opts?.requireScore && reply.score == null) {
+        throw new Error("Judge reply omitted score");
+      }
+      return reply;
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") throw err;
+      lastErr = err;
+    }
   }
+  throw lastErr instanceof Error ? lastErr : new Error("Parent JSON failed");
 }
 
 async function parentFollowUp(
@@ -429,6 +449,7 @@ export async function runEngine(input: EngineInput) {
           input,
           `GOAL:\n${goal}\n\nCURRENT SYSTEM PROMPT (rev ${currentRev}):\n${promptText}\n\nREVISION LOG (unified diffs + scores, oldest → newest). Read the diffs to see whether you are improving or degrading:\n${historyBrief(versions)}\n\nCHILD TRANSCRIPTS:\n${transcriptBlock(results)}\n\n${killFocusBlock(killed, ledger)}\n\nScore 1–10. If score >= ${settings.targetScore} AND there was no [ENGINE KILL], action="pass". If this score is below the best in the log, prefer action="revert" to that rev or a real rewrite — not a tiny edit of a loser. Otherwise revise the FULL system prompt. Fill rule_ledger. Only schedule scenarios for FAIL or new rules. Only the FIRST user turn per scenario is required.`,
           (text) => onEvent({ type: "parent-delta", text }),
+          { requireScore: true },
         );
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") throw err;

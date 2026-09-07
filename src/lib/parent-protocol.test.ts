@@ -126,6 +126,20 @@ describe("parseParentReply", () => {
     }
   });
 
+  it("accepts a numeric score sent as a string", () => {
+    const reply = parseParentReply(
+      {
+        action: "revise",
+        system_prompt: "Be terse.",
+        scenarios: [{ name: "Probe", turns: [{ user: "Hi" }] }],
+        score: "7",
+        rationale: "Held the cap.",
+      },
+      1,
+    );
+    assert.equal(reply.score, 7);
+  });
+
   it("rejects a non-object", () => {
     assert.throws(() => parseParentReply(null, 1), /not an object/);
     assert.throws(() => parseParentReply("draft", 1), /not an object/);

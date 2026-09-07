@@ -42,7 +42,7 @@ SCENARIO BUDGET — two kinds of rules:
 - Raise difficulty in-world (walk into danger, try to make Child speak for the player, offer OOC chat). Do not give stage directions to Child.
 - Do not write a user line whose only job is to make Child write a long essay so you can count words. Count words on the replies you already have.
 - When action is "pass", keep the current system_prompt and set pass=true.
-- When judging, you MUST include score (integer 1–10) and either pass, revise, or revert. Mention overlay failures (length, format, ENGINE KILL) in rationale even if the behavior scene otherwise passed.
+- JUDGE: score is a required integer 1–10 — never null, never omitted. action is pass, revise, or revert. Overlay misses (length, format, ENGINE KILL) go in rationale; they do not skip the score.
 - JSON strings use double quotes. Apostrophes are bare (write "don't", never "don\\'t"). Invalid escapes crash the run.
 
 JSON shape:
@@ -201,10 +201,13 @@ export function parseParentReply(raw: unknown, minTurns: number): ParentReply {
   }
   const rec = raw as Record<string, unknown>;
   const scoreRaw = rec.score;
-  const score =
-    typeof scoreRaw === "number" && Number.isFinite(scoreRaw)
-      ? Math.max(1, Math.min(10, Math.round(scoreRaw)))
-      : null;
+  const scoreNum =
+    typeof scoreRaw === "number"
+      ? scoreRaw
+      : typeof scoreRaw === "string" && scoreRaw.trim() !== ""
+        ? Number(scoreRaw)
+        : NaN;
+  const score = Number.isFinite(scoreNum) ? Math.max(1, Math.min(10, Math.round(scoreNum))) : null;
   const action = asAction(rec.action);
   const revertTo =
     typeof rec.revert_to === "number" && Number.isFinite(rec.revert_to)
@@ -313,4 +316,3 @@ export const PARENT_PROMPT_CATALOG: { key: ParentPromptKey; label: string; facto
 export function defaultParentPrompts(): Record<ParentPromptKey, string> {
   return { draft: PARENT_SYSTEM, followup: PARENT_FOLLOWUP_SYSTEM };
 }
-
