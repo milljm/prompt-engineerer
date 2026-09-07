@@ -43,6 +43,7 @@ SCENARIO BUDGET — two kinds of rules:
 - Do not write a user line whose only job is to make Child write a long essay so you can count words. Count words on the replies you already have.
 - When action is "pass", keep the current system_prompt and set pass=true.
 - JUDGE: score is a required integer 1–10 — never null, never omitted. action is pass, revise, or revert. Overlay misses (length, format, ENGINE KILL) go in rationale; they do not skip the score.
+- JUDGE THIS ROUND ONLY. Score and quote only the CHILD TRANSCRIPTS block. The revision log is diffs + scores — it is not evidence of what Child just said. Never cite a phrase that does not appear in THIS round's transcripts.
 - JSON strings use double quotes. Apostrophes are bare (write "don't", never "don\\'t"). Invalid escapes crash the run.
 
 JSON shape:
@@ -253,12 +254,26 @@ export function scoreTrend(versions: PromptVersion[]): string {
   return `Score path: ${path} (${direction}). Best so far: rev ${best.rev} at ${best.score}/10. Beat that best score; do not wander.`;
 }
 
+/** Short structural labels only. Judge writeups quote old Child and pollute the next score. */
+export function historyNote(rationale: string): string {
+  const t = rationale.replace(/\s+/g, " ").trim();
+  if (!t) return "";
+  if (
+    /^(User edit|Seeded by you|Initial draft|Reverted to|Restored from|Parent adjusted|Revised after)/i.test(
+      t,
+    )
+  ) {
+    return `\nnote: ${t.slice(0, 80)}`;
+  }
+  return "";
+}
+
 export function historyBrief(versions: PromptVersion[]): string {
   if (!versions.length) return "(none yet)";
   const ordered = [...versions].sort((a, b) => a.rev - b.rev);
   const blocks = ordered.map((v, i) => {
     const score = v.score == null ? "unscored" : `${v.score}/10`;
-    const note = v.rationale.trim() ? `\nnote: ${v.rationale.trim()}` : "";
+    const note = historyNote(v.rationale);
     if (i === 0) {
       return `v${v.rev} [${v.status}] score ${score} (initial — full text is CURRENT SYSTEM PROMPT if this is still current)${note}`;
     }

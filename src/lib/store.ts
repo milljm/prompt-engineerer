@@ -185,7 +185,7 @@ export const useEngineStore = create<EngineStore>()(
     }),
     {
       name: "pe-engine",
-      version: 6,
+      version: 7,
       partialize: (s) => ({
         settings: s.settings,
         goal: s.goal,
@@ -206,7 +206,8 @@ export const useEngineStore = create<EngineStore>()(
         const staleParent =
           !oldDraft ||
           oldDraft.includes("EVERY prior revision") ||
-          oldDraft.includes("When judging, you MUST include score (integer 1–10)");
+          oldDraft.includes("When judging, you MUST include score (integer 1–10)") ||
+          !oldDraft.includes("JUDGE THIS ROUND ONLY");
         const staleFollow =
           !oldFollow ||
           oldFollow.includes("Poke whatever Child just got wrong") ||
