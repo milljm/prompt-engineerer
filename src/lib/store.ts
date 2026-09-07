@@ -185,7 +185,7 @@ export const useEngineStore = create<EngineStore>()(
     }),
     {
       name: "pe-engine",
-      version: 5,
+      version: 6,
       partialize: (s) => ({
         settings: s.settings,
         goal: s.goal,
@@ -203,7 +203,10 @@ export const useEngineStore = create<EngineStore>()(
         const factory = defaultParentPrompts();
         const oldDraft = p.parentPrompts?.draft ?? "";
         const oldFollow = p.parentPrompts?.followup ?? "";
-        const staleParent = !oldDraft || oldDraft.includes("EVERY prior revision");
+        const staleParent =
+          !oldDraft ||
+          oldDraft.includes("EVERY prior revision") ||
+          oldDraft.includes("When judging, you MUST include score (integer 1–10)");
         const staleFollow =
           !oldFollow ||
           oldFollow.includes("Poke whatever Child just got wrong") ||
