@@ -171,6 +171,14 @@ describe("killFocusBlock", () => {
     assert.equal(/HARD HALT/.test(text), false);
     assert.match(text, /THIS round/);
   });
+
+  it("does not echo ledger notes that quote old Child", () => {
+    const text = killFocusBlock(false, [
+      { name: "Player agency", verdict: "fail", note: 'Child said "the brass lantern behind the bar"' },
+    ]);
+    assert.doesNotMatch(text, /brass lantern/);
+    assert.match(text, /Player agency: FAIL/);
+  });
 });
 
 describe("clearStickyKillFails", () => {
