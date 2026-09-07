@@ -88,7 +88,7 @@ async function parentCall(
             "Return ONLY the JSON object. Apostrophes must be bare: write don't, never don\\'t.",
             "Emit one FIRST user turn per scenario — later turns are written live.",
             opts?.requireScore
-              ? 'Judging replies MUST set "score" to an integer 1-10 and "action" to pass, revise, or revert. score must not be null.'
+              ? 'Judging replies MUST set "score" to an integer 1-10 and "action" to pass, revise, or revert. score must not be null. Cite only CHILD TRANSCRIPTS THIS ROUND.'
               : "",
           ]
             .filter(Boolean)
@@ -385,7 +385,7 @@ export async function runEngine(input: EngineInput) {
         const halt = ledgerWantsKillHalt(ledger);
         reply = await parentCall(
           input,
-          `GOAL:\n${goal}\n\nCURRENT SYSTEM PROMPT (rev ${cur?.rev}):\n${cur?.prompt ?? ""}\n\nREVISION LOG (unified diffs + scores, oldest → newest):\n${historyBrief(versions)}\n\n${killFocusBlock(halt, ledger)}\n\nDesign scenarios only for FAIL or new rules. Each of those gets ${settings.turns} turns. action should be "draft". Keep system_prompt unless it is clearly broken or scores have stalled. Only the FIRST user turn per scenario is required.`,
+          `GOAL:\n${goal}\n\nCURRENT SYSTEM PROMPT (rev ${cur?.rev}):\n${cur?.prompt ?? ""}\n\nREVISION LOG (diffs + scores only — not prior Child speech):\n${historyBrief(versions)}\n\n${killFocusBlock(halt, ledger)}\n\nDesign scenarios only for FAIL or new rules. Each of those gets ${settings.turns} turns. action should be "draft". Keep system_prompt unless it is clearly broken or scores have stalled. Only the FIRST user turn per scenario is required.`,
           (text) => onEvent({ type: "parent-delta", text }),
         );
         pendingScenarios = planNextScenarios(reply.scenarios, lastPlanned, ledger, halt);
@@ -447,7 +447,7 @@ export async function runEngine(input: EngineInput) {
       try {
         judged = await parentCall(
           input,
-          `GOAL:\n${goal}\n\nCURRENT SYSTEM PROMPT (rev ${currentRev}):\n${promptText}\n\nREVISION LOG (unified diffs + scores, oldest → newest). Read the diffs to see whether you are improving or degrading:\n${historyBrief(versions)}\n\nCHILD TRANSCRIPTS:\n${transcriptBlock(results)}\n\n${killFocusBlock(killed, ledger)}\n\nScore 1–10. If score >= ${settings.targetScore} AND there was no [ENGINE KILL], action="pass". If this score is below the best in the log, prefer action="revert" to that rev or a real rewrite — not a tiny edit of a loser. Otherwise revise the FULL system prompt. Fill rule_ledger. Only schedule scenarios for FAIL or new rules. Only the FIRST user turn per scenario is required.`,
+          `GOAL:\n${goal}\n\nCURRENT SYSTEM PROMPT (rev ${currentRev}):\n${promptText}\n\nREVISION LOG (diffs + scores only — not this round's Child). Use it for trend, not for quotes:\n${historyBrief(versions)}\n\n===== CHILD TRANSCRIPTS THIS ROUND (iteration ${i}, rev ${currentRev}) — score and quote ONLY this block =====\n${transcriptBlock(results)}\n===== END THIS ROUND =====\n\n${killFocusBlock(killed, ledger)}\n\nScore 1–10 from THIS ROUND's transcripts only. Do not cite phrases from the revision log or ledger notes. If score >= ${settings.targetScore} AND there was no [ENGINE KILL], action="pass". If this score is below the best in the log, prefer action="revert" to that rev or a real rewrite — not a tiny edit of a loser. Otherwise revise the FULL system prompt. Fill rule_ledger. Only schedule scenarios for FAIL or new rules. Only the FIRST user turn per scenario is required.`,
           (text) => onEvent({ type: "parent-delta", text }),
           { requireScore: true },
         );
