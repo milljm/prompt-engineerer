@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   fallbackScenarios,
   historyBrief,
+  historyNote,
   isMetaUserTurn,
   isOverlayScenarioName,
   inCharacterFollowUp,
@@ -185,6 +186,35 @@ describe("historyBrief", () => {
     assert.match(brief, /\+Be terse\./);
     assert.doesNotMatch(brief, /system prompt v1 \[tested\]:\nBe helpful/);
     assert.equal(historyBrief([]), "(none yet)");
+  });
+
+  it("does not replay last round's judge writeup of Child", () => {
+    const versions: PromptVersion[] = [
+      {
+        rev: 1,
+        prompt: "Be helpful.",
+        rationale: 'Child said "the brass lantern behind the bar" and stole agency.',
+        score: 5,
+        status: "tested",
+        createdAt: 1,
+        parentRev: null,
+      },
+      {
+        rev: 2,
+        prompt: "Be terse.",
+        rationale: "User edit",
+        score: null,
+        status: "draft",
+        createdAt: 2,
+        parentRev: 1,
+      },
+    ];
+    const brief = historyBrief(versions);
+    assert.doesNotMatch(brief, /brass lantern/);
+    assert.doesNotMatch(brief, /stole agency/);
+    assert.match(brief, /note: User edit/);
+    assert.equal(historyNote("Revised after missing the target score"), "\nnote: Revised after missing the target score");
+    assert.equal(historyNote('Child quoted "a very specific thing."'), "");
   });
 });
 
