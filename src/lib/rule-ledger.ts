@@ -74,11 +74,10 @@ export function mergeLedger(prev: RuleRecord[], next: RuleRecord[]): RuleRecord[
   return [...map.values()];
 }
 
+/** Names and verdicts only. Notes quote old Child and leak into the next judge. */
 export function ledgerBrief(ledger: RuleRecord[]): string {
   if (!ledger.length) return "(empty — no rules scored yet)";
-  return ledger
-    .map((r) => `${r.name}: ${r.verdict.toUpperCase()}${r.note ? ` — ${r.note}` : ""}`)
-    .join("\n");
+  return ledger.map((r) => `${r.name}: ${r.verdict.toUpperCase()}`).join("\n");
 }
 
 export function passedKeys(ledger: RuleRecord[]): Set<string> {
@@ -228,6 +227,7 @@ export function killFocusBlock(killed: boolean, ledger: RuleRecord[]): string {
       `Verdicts are for THIS round's transcripts only. A prior ENGINE KILL does not ` +
       `make this round a fail if Child stayed under the cap. If there is no [ENGINE KILL] ` +
       `in THIS transcript, Runaway length must be PASS.\n` +
+      `Ledger rows are name + verdict only. They are not quotes from this transcript.\n` +
       `${brief}`
     );
   }
